@@ -41,7 +41,7 @@ app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
 # Security
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 # Configure logging
 logging.basicConfig(
