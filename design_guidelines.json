@@ -1,0 +1,172 @@
+{
+  "design_system": {
+    "identity": {
+      "name": "Emergent Clone - Neon Dev",
+      "archetype": "Electric & Neon",
+      "vibe": "Futuristic, High-Performance, Developer-Centric, Cyberpunk Lite",
+      "principles": [
+        "Fusion over Imitation: Mix IDE utility with Sci-Fi aesthetics",
+        "Emotion First: Every interaction feels powerful and precise",
+        "Content is King: Code is the hero; UI recedes",
+        "Zoom In: Focus on syntax highlighting and terminal details",
+        "Negative Space: Use black voids to make neon pop",
+        "Contrast: High contrast text for readability, glowing accents for action"
+      ]
+    },
+    "typography": {
+      "fonts": {
+        "headings": {
+          "family": "Outfit, sans-serif",
+          "weights": ["400", "700", "900"],
+          "usage": "Landing page titles, Feature headers, Modal titles"
+        },
+        "body": {
+          "family": "Manrope, sans-serif",
+          "weights": ["400", "500"],
+          "usage": "General UI text, documentation, descriptions"
+        },
+        "code": {
+          "family": "JetBrains Mono, monospace",
+          "weights": ["400", "500"],
+          "usage": "Code editors, terminal outputs, file paths, snippets"
+        }
+      },
+      "rules": [
+        "Headings > 32px must use tracking-tight",
+        "Overlines must be Uppercase + tracking-widest + text-xs",
+        "Line height: leading-none for headers, leading-relaxed for body",
+        "Never use Inter for Headings"
+      ]
+    },
+    "colors": {
+      "palette": {
+        "background": {
+          "default": "#030712",
+          "paper": "#0f172a",
+          "subtle": "#1e293b"
+        },
+        "primary": {
+          "main": "#06b6d4",
+          "glow": "0 0 20px rgba(6, 182, 212, 0.5)",
+          "text": "#cffafe"
+        },
+        "secondary": {
+          "main": "#8b5cf6",
+          "glow": "0 0 20px rgba(139, 92, 246, 0.5)"
+        },
+        "accent": {
+          "success": "#10b981",
+          "warning": "#f59e0b",
+          "error": "#ef4444",
+          "info": "#3b82f6"
+        },
+        "text": {
+          "primary": "#f8fafc",
+          "secondary": "#94a3b8",
+          "muted": "#475569"
+        }
+      },
+      "gradients": {
+        "hero": "linear-gradient(to right, #06b6d4, #8b5cf6)",
+        "glass": "linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%)"
+      }
+    },
+    "layout": {
+      "spacing_scale": ["p-1", "p-2", "p-4", "p-6", "p-8", "p-12", "p-16", "p-24", "p-32"],
+      "grid_systems": {
+        "marketing": {
+          "name": "The Tetris Grid",
+          "classes": "grid grid-cols-1 md:grid-cols-12 gap-8",
+          "rules": "Asymmetrical spans. Hero: col-span-8. Filler: col-span-4."
+        },
+        "dashboard": {
+          "name": "The Control Room",
+          "classes": "grid grid-cols-1 md:grid-cols-4 gap-4",
+          "rules": "Dense, 100% height utilization. No jagged bottoms."
+        }
+      },
+      "containers": {
+        "marketing": "max-w-7xl mx-auto px-6",
+        "app": "w-full h-screen overflow-hidden flex"
+      }
+    },
+    "components": {
+      "buttons": {
+        "primary": "bg-primary text-black font-bold hover:shadow-[0_0_20px_rgba(6,182,212,0.6)] transition-all duration-300 rounded-md",
+        "secondary": "border border-primary/50 text-primary hover:bg-primary/10 rounded-md",
+        "ghost": "text-gray-400 hover:text-white hover:bg-white/5 rounded-md"
+      },
+      "cards": {
+        "style": "Glassmorphism",
+        "classes": "bg-black/40 backdrop-blur-xl border border-white/10 shadow-2xl rounded-xl"
+      },
+      "inputs": {
+        "style": "Terminal",
+        "classes": "bg-black/50 border-white/10 focus:border-primary focus:ring-1 focus:ring-primary text-white font-mono rounded-md"
+      },
+      "surfaces": {
+        "header": "bg-black/60 backdrop-blur-md border-b border-white/5 sticky top-0 z-50",
+        "sidebar": "bg-gray-950 border-r border-white/5 h-full"
+      }
+    },
+    "visual_enhancers": {
+      "textures": "Use subtle noise overlays on dark backgrounds to prevent banding",
+      "borders": "1px solid rgba(255,255,255,0.1) for structure",
+      "shadows": "Colored shadows for neon effects (e.g., shadow-cyan-500/20)",
+      "decorations": [
+        "Glowing gradient lines (tracing beams)",
+        "Abstract geometric grid backgrounds",
+        "Code syntax snippets as background texture"
+      ]
+    },
+    "motion": {
+      "transitions": "transition-all duration-300 ease-out",
+      "hover": "transform -translate-y-1 scale-[1.01]",
+      "entrance": "animate-in fade-in slide-in-from-bottom-4 duration-700",
+      "loading": "Pulse or shimmer effects on skeletons"
+    },
+    "assets": {
+      "icons": "Lucide React (default). Use Phosphor Icons for marketing if needed.",
+      "images": {
+        "hero_background": {
+          "url": "https://images.unsplash.com/photo-1759735541630-036eefb7cd3a?crop=entropy&cs=srgb&fm=jpg&q=85",
+          "alt": "Abstract neon blue digital network",
+          "usage": "Hero section background with overlay"
+        },
+        "developer_working": {
+          "url": "https://images.unsplash.com/photo-1719400471588-575b23e27bd7?crop=entropy&cs=srgb&fm=jpg&q=85",
+          "alt": "Developer coding in dark room",
+          "usage": "About or Features section"
+        },
+        "code_screen": {
+          "url": "https://images.unsplash.com/photo-1759661881353-5b9cc55e1cf4?crop=entropy&cs=srgb&fm=jpg&q=85",
+          "alt": "Close up of code on screen",
+          "usage": "How it works section"
+        }
+      }
+    },
+    "tech_stack_specifics": {
+      "framework": "React (JS/JSX)",
+      "styling": "Tailwind CSS",
+      "ui_library": "Shadcn UI",
+      "icons_library": "lucide-react",
+      "file_extension": ".js / .jsx",
+      "rules": [
+        "Use 'export const Component = ...' for components",
+        "Use 'export default function Page() ...' for pages",
+        "Do not use TypeScript interfaces/types",
+        "Use prop-types if validation is strictly needed, otherwise keep it flexible"
+      ]
+    },
+    "universal_guidelines": [
+      "Dark Mode is mandatory and default.",
+      "Avoid gradients on text unless it's a very large headline.",
+      "Never use pure black (#000000) for cards; use tinted dark greys.",
+      "Always add hover states to interactive elements.",
+      "Use 'data-testid' for all interactive elements.",
+      "Ensure contrast ratios meet WCAG AA standards.",
+      "Mobile-first responsive design."
+    ]
+  },
+  "instructions_to_main_agent": "You are building a high-end, developer-focused code generation platform. Adhere strictly to the 'Electric & Neon' aesthetic. Use the provided image URLs for placeholders. Implement the 'Control Room' grid for the main dashboard. Ensure the chat interface feels like a powerful terminal. Use the 'Outfit' font for headings and 'JetBrains Mono' for all code-related text."
+}
