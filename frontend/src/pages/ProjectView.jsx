@@ -1,16 +1,42 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { Button } from '../components/ui/button';
 import { Navbar } from '../components/Navbar';
-import { FileTree } from '../components/FileTree';
 import { CodePreview } from '../components/CodePreview';
 import { 
   Download, ArrowLeft, Loader2, AlertCircle, FileCode, 
-  Calendar, Folder, ChevronLeft
+  Calendar, Folder, ChevronLeft, ChevronRight, ChevronDown, File, FolderOpen
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+// Simple flat file list instead of tree for now
+function SimpleFileList({ files, onSelect, selectedPath }) {
+  if (!files || files.length === 0) {
+    return <div className="p-4 text-gray-500 text-sm">No files</div>;
+  }
+  
+  return (
+    <div className="py-2">
+      {files.map((file, index) => (
+        <div
+          key={index}
+          onClick={() => onSelect(file)}
+          className={`flex items-center gap-2 px-4 py-2 cursor-pointer text-sm font-mono ${
+            selectedPath === file.path 
+              ? 'bg-cyan-500/20 text-cyan-400' 
+              : 'text-gray-300 hover:bg-white/5'
+          }`}
+          data-testid={`file-item-${index}`}
+        >
+          <File className="w-4 h-4 flex-shrink-0" />
+          <span className="truncate">{file.path}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ProjectView() {
   const { id } = useParams();
@@ -21,11 +47,10 @@ export default function ProjectView() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [downloading, setDownloading] = useState(false);
 
-  const fetchProject = async () => {
+  const fetchProject = useCallback(async () => {
     try {
       const response = await axios.get(`${API}/projects/${id}`);
       setProject(response.data);
-      // Select first file by default
       if (response.data.files && response.data.files.length > 0) {
         setSelectedFile(response.data.files[0]);
       }
@@ -38,12 +63,11 @@ export default function ProjectView() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     fetchProject();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [fetchProject]);
 
   const handleDownload = async () => {
     setDownloading(true);
@@ -88,14 +112,14 @@ export default function ProjectView() {
     );
   }
 
-  if (error) {
+  if (error || !project) {
     return (
       <div className="min-h-screen bg-[#030712]">
         <Navbar />
         <div className="max-w-4xl mx-auto px-6 py-12">
           <div className="flex items-center gap-2 p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400" data-testid="project-error">
             <AlertCircle className="w-5 h-5" />
-            {error}
+            {error || 'Project not found'}
           </div>
           <Link to="/dashboard" className="mt-4 inline-block">
             <Button variant="ghost" className="text-gray-400 hover:text-white">
@@ -112,7 +136,6 @@ export default function ProjectView() {
     <div className="min-h-screen bg-[#030712] flex flex-col">
       <Navbar />
       
-      {/* Project Header */}
       <div className="border-b border-white/5 bg-black/40">
         <div className="max-w-screen-2xl mx-auto px-6 py-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -128,7 +151,7 @@ export default function ProjectView() {
                 <h1 className="font-heading text-xl font-bold text-white" data-testid="project-title">
                   {project.name}
                 </h1>
-                <p className="text-gray-400 text-sm line-clamp-1">{project.description}</p>
+                <p className="text-gray-400 text-sm">{project.description}</p>
               </div>
             </div>
             
@@ -162,9 +185,7 @@ export default function ProjectView() {
         </div>
       </div>
 
-      {/* IDE-like Layout */}
       <div className="flex-1 flex overflow-hidden" data-testid="project-ide">
-        {/* File Tree Sidebar */}
         <div className="w-64 lg:w-72 border-r border-white/5 bg-[#0f172a] flex flex-col">
           <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
             <Folder className="w-4 h-4 text-cyan-400" />
@@ -172,7 +193,7 @@ export default function ProjectView() {
             <span className="text-xs text-gray-500 ml-auto">{project.files?.length || 0}</span>
           </div>
           <div className="flex-1 overflow-auto">
-            <FileTree 
+            <SimpleFileList 
               files={project.files || []} 
               onSelect={setSelectedFile}
               selectedPath={selectedFile?.path}
@@ -180,7 +201,6 @@ export default function ProjectView() {
           </div>
         </div>
 
-        {/* Code Preview */}
         <div className="flex-1 overflow-hidden bg-[#1e1e1e]">
           <CodePreview file={selectedFile} />
         </div>
