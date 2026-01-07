@@ -21,10 +21,6 @@ export default function ProjectView() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [downloading, setDownloading] = useState(false);
 
-  useEffect(() => {
-    fetchProject();
-  }, [id]);
-
   const fetchProject = async () => {
     try {
       const response = await axios.get(`${API}/projects/${id}`);
