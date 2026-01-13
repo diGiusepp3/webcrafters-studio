@@ -21,6 +21,7 @@ from backend.api.generate import router as generate_router
 from backend.api.projects import router as projects_router
 from backend.api.root import router as root_router
 from backend.api.projects_preview import router as preview_router
+from backend.api.credits import router as credits_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("webcrafters-studio")
