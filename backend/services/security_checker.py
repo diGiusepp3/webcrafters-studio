@@ -277,7 +277,7 @@ def apply_security_fixes(files: List[Dict[str, str]], findings: List[Dict[str, A
             # Replace hardcoded secret with environment variable reference
             # This is a simplified fix - in practice would need more context
             fixed_line = re.sub(
-                r'(["\']?)(?:api[_-]?key|secret[_-]?key|password|token)(["\']?)\s*[:=]\s*["\'][^"\']+'["\']',
+                r'(["\']?)(?:api[_-]?key|secret[_-]?key|password|token)(["\']?)\s*[:=]\s*["\'][^"\']+["\']',
                 lambda m: f'{m.group(1)}API_KEY{m.group(2)}: process.env.API_KEY',
                 original_line,
                 flags=re.IGNORECASE
