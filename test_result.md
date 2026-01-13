@@ -101,3 +101,39 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+
+user_problem_statement: "AI app generator produces code that can fail at runtime (e.g. outdated OpenAI SDK usage). Generator must validate and block invalid output during generation."
+
+backend:
+- task: "Post-generation validation: Node.js + OpenAI SDK"
+  implemented: true
+  working: "NA"
+  file: "validators/node_openai_validator.py"
+  stuck_count: 0
+  priority: "high"
+  needs_retesting: true
+  status_history:
+    - working: "NA"
+      agent: "main"
+      comment: "Added deterministic validation rules to block outdated OpenAI SDK usage, ESM mismatches, wrong TTS model, and unsafe env handling during app generation."
+
+frontend: []
+
+metadata:
+created_by: "main_agent"
+version: "1.1"
+test_sequence: 1
+run_ui: false
+
+test_plan:
+current_focus:
+- "Post-generation validation: Node.js + OpenAI SDK"
+stuck_tasks: []
+test_all: false
+test_priority: "high_first"
+
+agent_communication:
+- agent: "main"
+  message: "Validation layer added after AI generation to prevent runtime-breaking Node/OpenAI code. Needs testing on generated projects."
+

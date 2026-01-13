@@ -1,7 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from './ui/button';
 import { Code2, LogOut, History, Sparkles } from 'lucide-react';
+import {WebcraftersLogo} from "@/components/WebcraftersLogo";
 
 export const Navbar = () => {
   const { user, logout, isAuthenticated } = useAuth();
@@ -16,11 +17,9 @@ export const Navbar = () => {
     <header className="sticky top-0 z-50 bg-black/60 backdrop-blur-md border-b border-white/5" data-testid="navbar">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2 group" data-testid="navbar-logo">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-500 flex items-center justify-center">
-            <Code2 className="w-6 h-6 text-black" />
-          </div>
+          <WebcraftersLogo size={40} />
           <span className="font-heading text-xl font-bold text-white group-hover:text-cyan-400 transition-colors">
-            CodeForge
+            Webcrafters Studio <span className="text-cyan-400">(AI)</span>
           </span>
         </Link>
 

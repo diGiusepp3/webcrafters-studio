@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Navbar } from '../components/Navbar';
+import { useAuth } from '@/context/AuthContext';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Navbar } from '@/components/Navbar';
 import { Code2, Loader2, AlertCircle } from 'lucide-react';
 
 export default function Login() {
@@ -48,7 +48,7 @@ export default function Login() {
             </div>
             <CardTitle className="font-heading text-2xl text-white">Welcome Back</CardTitle>
             <CardDescription className="text-gray-400">
-              Sign in to continue building with CodeForge
+              Sign in to continue building with Webcrafters Studio
             </CardDescription>
           </CardHeader>
           

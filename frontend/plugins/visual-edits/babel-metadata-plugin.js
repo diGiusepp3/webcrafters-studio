@@ -238,54 +238,83 @@ function fileExportHasPortals({
   return found;
 }
 
+const VISITED_COMPOSITES = new Set();
+
 // Decide at a usage site whether <ElementName /> is a composite that should be excluded
 function usageIsCompositePortal({
-  elementName,
-  jsxPath,
-  state,
-  t,
-  traverse,
-  parser,
-  RADIX_ROOTS,
-}) {
-  // Same-file binding?
+                                  elementName,
+                                  jsxPath,
+                                  state,
+                                  t,
+                                  traverse,
+                                  parser,
+                                  RADIX_ROOTS,
+                                }) {
+  // 🔒 RECURSION GUARD (CRUCIAAL)
+  const file =
+      state.filename ||
+      state.file?.opts?.filename ||
+      state.file?.sourceFileName ||
+      "unknown";
+
+  const key = `${file}::${elementName}`;
+  if (VISITED_COMPOSITES.has(key)) {
+    return false;
+  }
+  VISITED_COMPOSITES.add(key);
+
   const binding = jsxPath.scope.getBinding(elementName);
-  if (binding && binding.path) {
-    // Analyze the definition directly
+
+  // ─────────────────────────────────────────
+  // Same-file binding
+  if (binding && binding.path && !binding.path.isImportSpecifier() && !binding.path.isImportDefaultSpecifier()) {
     let hit = false;
+
     binding.path.traverse({
       JSXOpeningElement(op) {
         if (hit) return;
+
         const name = jsxNameOf(op.node, t);
+        if (!name) return;
+
         if (isPortalishName(name, RADIX_ROOTS)) {
           hit = true;
           return;
         }
-        if (/^[A-Z]/.test(name || "")) {
+
+        if (/^[A-Z]/.test(name)) {
           const innerBinding = op.scope.getBinding(name);
           if (innerBinding && innerBinding.path) {
-            innerBinding.path.traverse(this.visitors);
+            const childHit = usageIsCompositePortal({
+              elementName: name,
+              jsxPath: op,
+              state,
+              t,
+              traverse,
+              parser,
+              RADIX_ROOTS,
+            });
+            if (childHit) {
+              hit = true;
+            }
           }
         }
       },
     });
-    if (hit) return true;
+
+    return hit;
   }
 
-  // Imported binding (named)
+  // ─────────────────────────────────────────
+  // Imported named binding
   if (binding && binding.path && binding.path.isImportSpecifier()) {
     const from = binding.path.parent.source.value;
-    const fileFrom =
-      state.filename ||
-      state.file?.opts?.filename ||
-      state.file?.sourceFileName ||
-      __filename;
-    const absPath = resolveImportPath(from, fileFrom);
+    const absPath = resolveImportPath(from, file);
     if (!absPath) return false;
-    const exportName = binding.path.node.imported.name;
+
     return fileExportHasPortals({
       absPath,
-      exportName,
+      exportName: binding.path.node.imported.name,
       t,
       traverse,
       parser,
@@ -293,16 +322,13 @@ function usageIsCompositePortal({
     });
   }
 
-  // Imported binding (default)
+  // ─────────────────────────────────────────
+  // Imported default binding
   if (binding && binding.path && binding.path.isImportDefaultSpecifier()) {
     const from = binding.path.parent.source.value;
-    const fileFrom =
-      state.filename ||
-      state.file?.opts?.filename ||
-      state.file?.sourceFileName ||
-      __filename;
-    const absPath = resolveImportPath(from, fileFrom);
+    const absPath = resolveImportPath(from, file);
     if (!absPath) return false;
+
     return fileExportHasPortals({
       absPath,
       exportName: "default",
@@ -315,6 +341,7 @@ function usageIsCompositePortal({
 
   return false;
 }
+
 
 // ───────────────────────────────────────────────────────────────────────────────
 // Babel plugin for JSX transformation - adds metadata to all elements

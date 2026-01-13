@@ -1,4 +1,4 @@
-# CodeForge - AI Code Generation Platform
+# Webcrafters - AI Code Generation Platform
 
 ## Original Problem Statement
 Build an application similar to app.emergent.sh - a code generation platform that:
@@ -15,11 +15,11 @@ Build an application similar to app.emergent.sh - a code generation platform tha
 ### Tech Stack
 - **Frontend**: React + Tailwind CSS + Shadcn UI
 - **Backend**: FastAPI + MongoDB
-- **AI**: OpenAI GPT-5.2 via emergentintegrations library
+- **AI**: OpenAI GPT-4.1-mini via webcrafters-integrations library
 
 ### Key Components
 1. **Authentication**: JWT-based auth with register/login
-2. **Code Generator**: GPT-5.2 powered code generation
+2. **Code Generator**: GPT-4.1-mini powered code generation
 3. **Project Manager**: CRUD operations for generated projects
 4. **File Preview**: Syntax-highlighted code viewer
 5. **ZIP Download**: Server-side ZIP generation
@@ -44,7 +44,7 @@ Build an application similar to app.emergent.sh - a code generation platform tha
 
 ### Backend (/app/backend/server.py)
 - User registration & login with JWT
-- Code generation endpoint using GPT-5.2
+- Code generation endpoint using GPT-4.1-mini
 - Project CRUD (create, read, delete)
 - ZIP file generation and download
 - MongoDB integration for persistence

@@ -1,13 +1,13 @@
 import { Link } from 'react-router-dom';
-import { Button } from '../components/ui/button';
-import { Navbar } from '../components/Navbar';
+import { Button } from '@/components/ui/button';
+import { Navbar } from '@/components/Navbar';
 import { Code2, Zap, Download, History, ArrowRight, Sparkles, Layers, FileCode } from 'lucide-react';
-
+import { Footer } from '@/components/Footer';
 const features = [
   {
     icon: <Sparkles className="w-6 h-6" />,
     title: 'AI-Powered Generation',
-    description: 'Describe your app in plain English. Our GPT-5.2 powered engine generates production-ready code instantly.'
+    description: 'Describe your app in plain English. Our AI engine generates structured, production-ready code you can immediately build on.'
   },
   {
     icon: <Layers className="w-6 h-6" />,
@@ -28,7 +28,7 @@ const features = [
 
 const steps = [
   { step: '01', title: 'Describe Your App', description: 'Write a natural language prompt describing what you want to build' },
-  { step: '02', title: 'AI Generates Code', description: 'GPT-5.2 analyzes your requirements and creates the complete project' },
+  { step: '02', title: 'AI Generates Code', description: 'Our AI analyzes your requirements and generates the complete project structure' },
   { step: '03', title: 'Review & Download', description: 'Preview the generated files, then download as a ZIP to start building' }
 ];
 
@@ -54,9 +54,10 @@ export default function Landing() {
           <div className="text-center max-w-4xl mx-auto">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-sm mb-8">
               <Zap className="w-4 h-4" />
-              Powered by OpenAI GPT-5.2
+              AI-powered code generation by Webcrafters Studio
             </div>
-            
+
+
             <h1 className="font-heading text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight text-white mb-6" data-testid="hero-title">
               Turn Ideas Into
               <span className="block bg-gradient-to-r from-cyan-400 to-violet-500 bg-clip-text text-transparent">
@@ -65,7 +66,7 @@ export default function Landing() {
             </h1>
             
             <p className="text-lg sm:text-xl text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-              Describe your application in plain English. CodeForge generates complete, 
+              Describe your application in plain English. Webcrafters Studio generates complete,
               production-ready code with proper architecture, ready to download and run.
             </p>
             
@@ -98,7 +99,7 @@ export default function Landing() {
               </div>
               <pre className="p-6 text-sm font-mono overflow-x-auto">
                 <code className="text-gray-300">
-                  <span className="text-violet-400">from</span> <span className="text-cyan-400">codeforge</span> <span className="text-violet-400">import</span> generate{'\n\n'}
+                  <span className="text-violet-400">from</span> <span className="text-cyan-400">Webcrafters Studio</span> <span className="text-violet-400">import</span> generate{'\n\n'}
                   <span className="text-gray-500"># Describe your app in plain English</span>{'\n'}
                   prompt = <span className="text-green-400">"Build a task management app with user auth,{'\n'}          drag-and-drop boards, and real-time updates"</span>{'\n\n'}
                   <span className="text-gray-500"># Generate complete project code</span>{'\n'}
@@ -186,18 +187,7 @@ export default function Landing() {
         </div>
       </section>
       
-      {/* Footer */}
-      <footer className="py-8 border-t border-white/5">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <Code2 className="w-5 h-5 text-cyan-400" />
-            <span className="font-heading font-bold text-white">CodeForge</span>
-          </div>
-          <p className="text-gray-500 text-sm">
-            2024 CodeForge. AI-Powered Code Generation.
-          </p>
-        </div>
-      </footer>
+      <Footer/>
     </div>
   );
 }
