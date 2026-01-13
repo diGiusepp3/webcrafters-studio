@@ -53,6 +53,7 @@ app.include_router(generate_router)
 app.include_router(projects_router)
 app.include_router(root_router)
 app.include_router(preview_router)  # serveert /preview/{preview_id}/...
+app.include_router(credits_router)  # credits & billing
 
 
 # CORS (exact behouden)
