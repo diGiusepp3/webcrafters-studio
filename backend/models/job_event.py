@@ -2,8 +2,7 @@
 from datetime import datetime
 from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Text, Integer, ForeignKey
-from sqlalchemy.dialects.mysql import DATETIME, JSON as MYSQL_JSON
+from sqlalchemy import String, Text, Integer, JSON, DateTime
 
 from backend.core.database import Base
 
@@ -28,6 +27,6 @@ class JobEvent(Base):
     message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Extra metadata (duration_ms, error details, etc.)
-    metadata: Mapped[Optional[dict]] = mapped_column(MYSQL_JSON, nullable=True)
+    metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     
-    created_at: Mapped[datetime] = mapped_column(DATETIME(fsp=3), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
