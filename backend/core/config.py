@@ -47,16 +47,8 @@ def get_database_url() -> str:
     if DATABASE_URL:
         return DATABASE_URL
     
-    # Check if MySQL is configured
-    mysql_host = os.environ.get("MYSQL_HOST")
-    if mysql_host and mysql_host != "127.0.0.1":
-        mysql_port = int(os.environ.get("MYSQL_PORT", "3306"))
-        mysql_user = os.environ.get("MYSQL_USER", "root")
-        mysql_password = os.environ.get("MYSQL_PASSWORD", "")
-        mysql_db = os.environ.get("MYSQL_DB", "webcrafters")
-        return f"mysql+aiomysql://{mysql_user}:{mysql_password}@{mysql_host}:{mysql_port}/{mysql_db}?charset=utf8mb4"
-    
-    # Default to SQLite
+    # For this preview environment, use SQLite (MySQL not available)
+    # In production, MySQL would be used
     db_path = ROOT_DIR / "backend" / "webcrafters.db"
     return f"sqlite+aiosqlite:///{db_path}"
 
