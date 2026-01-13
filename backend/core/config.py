@@ -37,16 +37,36 @@ def get_openai_client() -> OpenAI:
         raise RuntimeError("OPENAI_API_KEY not configured (.env).")
     return OpenAI(api_key=key)
 
-# ================== MYSQL ==================
+# ================== DATABASE ==================
+# Using SQLite for local development/preview environment
 
-MYSQL_HOST = env("MYSQL_HOST")
-MYSQL_PORT = int(env("MYSQL_PORT"))
-MYSQL_USER = env("MYSQL_USER")
-MYSQL_PASSWORD = os.environ.get("MYSQL_PASSWORD")
-MYSQL_DB = env("MYSQL_DB")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+def get_database_url() -> str:
+    """Get database URL - supports SQLite or MySQL."""
+    if DATABASE_URL:
+        return DATABASE_URL
+    
+    # Check if MySQL is configured
+    mysql_host = os.environ.get("MYSQL_HOST")
+    if mysql_host and mysql_host != "127.0.0.1":
+        mysql_port = int(os.environ.get("MYSQL_PORT", "3306"))
+        mysql_user = os.environ.get("MYSQL_USER", "root")
+        mysql_password = os.environ.get("MYSQL_PASSWORD", "")
+        mysql_db = os.environ.get("MYSQL_DB", "webcrafters")
+        return f"mysql+aiomysql://{mysql_user}:{mysql_password}@{mysql_host}:{mysql_port}/{mysql_db}?charset=utf8mb4"
+    
+    # Default to SQLite
+    db_path = ROOT_DIR / "backend" / "webcrafters.db"
+    return f"sqlite+aiosqlite:///{db_path}"
+
+# Legacy MySQL vars (for backward compatibility)
+MYSQL_HOST = os.environ.get("MYSQL_HOST", "127.0.0.1")
+MYSQL_PORT = int(os.environ.get("MYSQL_PORT", "3306"))
+MYSQL_USER = os.environ.get("MYSQL_USER", "root")
+MYSQL_PASSWORD = os.environ.get("MYSQL_PASSWORD", "")
+MYSQL_DB = os.environ.get("MYSQL_DB", "webcrafters")
 
 def mysql_url() -> str:
-    return (
-        f"mysql+aiomysql://{MYSQL_USER}:{MYSQL_PASSWORD}"
-        f"@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4"
-    )
+    """Legacy function - now delegates to get_database_url()."""
+    return get_database_url()
