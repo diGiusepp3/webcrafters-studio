@@ -1,9 +1,8 @@
 # /backend/models/preview_report.py
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Text, ForeignKey
-from sqlalchemy.dialects.mysql import DATETIME, JSON as MYSQL_JSON, LONGTEXT
+from sqlalchemy import String, Text, ForeignKey, JSON, DateTime
 
 from backend.core.database import Base
 
@@ -20,30 +19,25 @@ class PreviewReport(Base):
     user_id: Mapped[str] = mapped_column(String(36), index=True)
 
     # Timeline steps (structured list)
-    # [{"step": "generating", "status": "success", "started_at": ..., "completed_at": ..., "duration_ms": ...}]
-    timeline_steps: Mapped[Optional[list]] = mapped_column(MYSQL_JSON, nullable=True)
+    timeline_steps: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     # Agent chat messages
-    # [{"role": "agent", "message": "...", "timestamp": ...}]
-    chat_messages: Mapped[Optional[list]] = mapped_column(MYSQL_JSON, nullable=True)
+    chat_messages: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     # Build logs (stdout/stderr from build process)
-    build_logs: Mapped[Optional[str]] = mapped_column(LONGTEXT, nullable=True)
+    build_logs: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Runtime logs (from preview execution)
-    runtime_logs: Mapped[Optional[str]] = mapped_column(LONGTEXT, nullable=True)
+    runtime_logs: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Screenshots list
-    # [{"url": "/previews/xxx/screenshot.png", "label": "Homepage", "timestamp": ...}]
-    screenshots: Mapped[Optional[list]] = mapped_column(MYSQL_JSON, nullable=True)
+    screenshots: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     # Applied fixes (file diffs/patch summaries)
-    # [{"file": "src/App.js", "diff": "...", "reason": "Fixed import error"}]
-    applied_fixes: Mapped[Optional[list]] = mapped_column(MYSQL_JSON, nullable=True)
+    applied_fixes: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     # Security findings
-    # [{"severity": "high", "type": "hardcoded_secret", "file": "...", "line": 42, "message": "...", "fixed": true}]
-    security_findings: Mapped[Optional[list]] = mapped_column(MYSQL_JSON, nullable=True)
+    security_findings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     # Preview URL (if deployed)
     preview_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -54,5 +48,5 @@ class PreviewReport(Base):
     # Error summary if failed
     error_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DATETIME(fsp=3), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DATETIME(fsp=3), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
