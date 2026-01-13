@@ -33,6 +33,10 @@ dist
 # Environment files (comprehensive coverage)
 .env
 .inc
+**/.inc
+# Explicit env protection (defensive)
+**/.env
+**/.env.*
 
 *token.json*
 *credentials.json*
@@ -79,4 +83,11 @@ agenthub/agents/youtube/db
 .cache/
 
 # Mobile development
-android-sdk/ 
+android-sdk/
+
+# AI / generation artifacts
+**/generated/**
+**/previews/**
+**/previews/*
+
+**/db.py
