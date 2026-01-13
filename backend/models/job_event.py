@@ -27,6 +27,6 @@ class JobEvent(Base):
     message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Extra metadata (duration_ms, error details, etc.)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
