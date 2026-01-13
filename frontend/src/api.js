@@ -1,8 +1,11 @@
 // frontend/src/api.js
 import axios from 'axios';
 
+// Use environment variable for backend URL, fallback to direct port in development
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+
 const api = axios.create({
-    baseURL: "/api",
+    baseURL: `${BACKEND_URL}/api`,
     timeout: 120000,
 });
 
