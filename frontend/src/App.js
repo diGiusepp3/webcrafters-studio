@@ -76,6 +76,11 @@ function AppRoutes() {
           <ProjectView />
         </ProtectedRoute>
       } />
+      <Route path="/credits" element={
+        <ProtectedRoute>
+          <Credits />
+        </ProtectedRoute>
+      } />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
