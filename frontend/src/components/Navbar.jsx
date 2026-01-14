@@ -1,12 +1,32 @@
+// frontend/src/components/Navbar.jsx
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from './ui/button';
-import { Code2, LogOut, History, Sparkles } from 'lucide-react';
-import {WebcraftersLogo} from "@/components/WebcraftersLogo";
+import { LogOut, History, Sparkles, Coins, Plus, Bell, Gift } from 'lucide-react';
+import { WebcraftersLogo } from "@/components/WebcraftersLogo";
+import api from '@/api';
 
 export const Navbar = () => {
   const { user, logout, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const [credits, setCredits] = useState(null);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchCredits();
+    }
+  }, [isAuthenticated]);
+
+  const fetchCredits = async () => {
+    try {
+      const res = await api.get('/credits/balance');
+      setCredits(res.data.balance_display);
+    } catch (err) {
+      console.error('Failed to fetch credits:', err);
+      setCredits('0.00');
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -38,7 +58,45 @@ export const Navbar = () => {
                   History
                 </Button>
               </Link>
-              <div className="flex items-center gap-3 pl-4 border-l border-white/10">
+
+              {/* Credits Display - Like emergent.sh */}
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/40 border border-white/10">
+                <div className="flex items-center gap-1.5">
+                  <Coins className="w-4 h-4 text-amber-400" />
+                  <span className="text-white font-medium" data-testid="navbar-credits">
+                    {credits || '---'}
+                  </span>
+                </div>
+                <Link to="/credits" data-testid="nav-buy-credits">
+                  <Button
+                    size="sm"
+                    className="h-7 px-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold hover:from-amber-400 hover:to-orange-400"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Buy Credits
+                  </Button>
+                </Link>
+              </div>
+
+              {/* Additional Icons */}
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-gray-400 hover:text-white hover:bg-white/5 h-8 w-8"
+                >
+                  <Bell className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-gray-400 hover:text-white hover:bg-white/5 h-8 w-8"
+                >
+                  <Gift className="w-4 h-4" />
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-3 pl-3 border-l border-white/10">
                 <span className="text-sm text-gray-400">{user?.name}</span>
                 <Button 
                   variant="ghost" 

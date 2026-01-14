@@ -31,3 +31,5 @@ anyio==4.12.0
 
 # ───────── Utilities ─────────
 rich==14.2.0
+aiomysql==0.3.2
+aiosqlite==0.22.1

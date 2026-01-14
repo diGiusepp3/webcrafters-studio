@@ -90,4 +90,11 @@ android-sdk/
 **/previews/**
 **/previews/*
 
-**/db.py
+**/db.py-e 
+# Environment files
+*.env
+*.env.*
+-e 
+# Environment files
+*.env
+*.env.*

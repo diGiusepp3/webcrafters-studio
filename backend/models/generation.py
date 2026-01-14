@@ -2,9 +2,7 @@
 from datetime import datetime
 from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Text, ForeignKey, Integer
-from sqlalchemy.dialects.mysql import LONGTEXT, JSON as MYSQL_JSON
-from sqlalchemy.dialects.mysql import DATETIME
+from sqlalchemy import String, Text, ForeignKey, Integer, JSON, DateTime
 
 from backend.core.database import Base
 
@@ -16,7 +14,7 @@ class Generation(Base):
         String(36), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
-    prompt: Mapped[str] = mapped_column(LONGTEXT)
+    prompt: Mapped[str] = mapped_column(Text)
     project_type: Mapped[str] = mapped_column(String(40))
 
     model: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
@@ -28,8 +26,7 @@ class Generation(Base):
     cost_cents: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    ai_request: Mapped[Optional[dict]] = mapped_column(MYSQL_JSON, nullable=True)
-    ai_response: Mapped[Optional[dict]] = mapped_column(MYSQL_JSON, nullable=True)
+    ai_request: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    ai_response: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DATETIME(fsp=3), default=datetime.utcnow)
-
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -2,6 +2,12 @@
 # FILE: /backend/server.py
 # =========================================================
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path so 'backend' package is importable
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import logging
 
 from fastapi import FastAPI, Request, Response
@@ -15,6 +21,8 @@ from backend.api.generate import router as generate_router
 from backend.api.projects import router as projects_router
 from backend.api.root import router as root_router
 from backend.api.projects_preview import router as preview_router
+from backend.api.credits import router as credits_router
+from backend.api.agent_ws import router as agent_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("webcrafters-studio")
@@ -46,6 +54,8 @@ app.include_router(generate_router)
 app.include_router(projects_router)
 app.include_router(root_router)
 app.include_router(preview_router)  # serveert /preview/{preview_id}/...
+app.include_router(credits_router)  # credits & billing
+app.include_router(agent_router)    # live coding agent WebSocket
 
 
 # CORS (exact behouden)

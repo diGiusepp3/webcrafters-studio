@@ -1,7 +1,7 @@
+# /backend/models/user.py
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String
-from sqlalchemy.dialects.mysql import DATETIME
+from sqlalchemy import String, DateTime
 
 from backend.core.database import Base
 
@@ -11,4 +11,4 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(190), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(120))
-    created_at: Mapped[datetime] = mapped_column(DATETIME(fsp=3), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
