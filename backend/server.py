@@ -57,6 +57,57 @@ app.include_router(preview_router)  # serveert /preview/{preview_id}/...
 app.include_router(credits_router)  # credits & billing
 app.include_router(agent_router)    # live coding agent WebSocket
 
+# Static file serving for previews (must be after all API routes)
+from fastapi.responses import FileResponse
+from pathlib import Path as PathLib
+
+PREVIEW_ROOT = PathLib("/home/webcrafters/subdomains/studio/previews")
+
+@app.get("/preview/{preview_id}/{file_path:path}")
+async def serve_preview_static(preview_id: str, file_path: str):
+    """Serve static preview files at root /preview/ level."""
+    if not file_path or file_path == "":
+        file_path = "index.html"
+    
+    preview_dir = PREVIEW_ROOT / preview_id
+    target_file = preview_dir / file_path
+    
+    # Security check
+    try:
+        target_file = target_file.resolve()
+        preview_dir = preview_dir.resolve()
+        if not str(target_file).startswith(str(preview_dir)):
+            return Response(status_code=403, content="Access denied")
+    except Exception:
+        return Response(status_code=403, content="Invalid path")
+    
+    # Check if file exists
+    if not target_file.exists() or not target_file.is_file():
+        if (preview_dir / file_path).is_dir():
+            target_file = preview_dir / file_path / "index.html"
+            if not target_file.exists():
+                return Response(status_code=404, content="Not found")
+        else:
+            return Response(status_code=404, content="Not found")
+    
+    # Media types
+    suffix = target_file.suffix.lower()
+    media_types = {
+        ".html": "text/html",
+        ".css": "text/css",
+        ".js": "application/javascript",
+        ".json": "application/json",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".svg": "image/svg+xml",
+        ".ico": "image/x-icon",
+    }
+    media_type = media_types.get(suffix, "application/octet-stream")
+    
+    return FileResponse(target_file, media_type=media_type)
+
 
 # CORS (exact behouden)
 app.add_middleware(
