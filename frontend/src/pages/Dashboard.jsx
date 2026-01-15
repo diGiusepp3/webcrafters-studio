@@ -189,7 +189,7 @@ export default function Dashboard() {
                         </div>
 
                         <div className="flex gap-2">
-                          <Button size="sm" variant="outline" onClick={() => navigate(`/project/${project.id}`)}>
+                          <Button size="sm" variant="outline" onClick={() => navigate(`/generate?projectId=${project.id}`)}>
                             <Eye className="w-4 h-4 mr-1" /> View
                           </Button>
                           <Button size="sm" variant="outline" onClick={() => handleDownload(project.id, project.name)}>
