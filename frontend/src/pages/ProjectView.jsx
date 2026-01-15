@@ -92,9 +92,19 @@ export default function ProjectView() {
 
     try {
       const res = await api.post(`/projects/${id}/preview`);
-      window.open(res.data.url, "_blank", "noopener,noreferrer");
+      // The backend returns a relative URL like /preview/{id}/
+      // We need to construct the full URL
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
+      const previewUrl = res.data.url;
+      
+      // If the URL is relative, prepend the backend URL
+      const fullUrl = previewUrl.startsWith('http') 
+        ? previewUrl 
+        : `${backendUrl}${previewUrl}`;
+      
+      window.open(fullUrl, "_blank", "noopener,noreferrer");
     } catch (err) {
-      setError("Preview starten mislukt.");
+      setError(err?.response?.data?.detail || "Failed to start preview");
     } finally {
       setPreviewing(false);
     }
