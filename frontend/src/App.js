@@ -70,11 +70,6 @@ function AppRoutes() {
           <Generator />
         </ProtectedRoute>
       } />
-      <Route path="/project/:id" element={
-        <ProtectedRoute>
-          <ProjectView />
-        </ProtectedRoute>
-      } />
       <Route path="/credits" element={
         <ProtectedRoute>
           <Credits />
