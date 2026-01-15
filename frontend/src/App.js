@@ -5,7 +5,6 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Generator from './pages/Generator';
-import ProjectView from './pages/ProjectView';
 import Credits from './pages/Credits';
 import { Loader2 } from 'lucide-react';
 
