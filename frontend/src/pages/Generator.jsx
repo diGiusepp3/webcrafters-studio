@@ -1,7 +1,7 @@
 // frontend/src/pages/Generator.jsx
-// Enhanced with Agent Timeline, Chatbox, and Security Findings
-import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+// Unified Generator: Create NEW projects + Edit EXISTING projects
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import api from "@/api";
 
 import { Button } from "@/components/ui/button";
