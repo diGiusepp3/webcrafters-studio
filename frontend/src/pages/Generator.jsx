@@ -12,6 +12,8 @@ import { Navbar } from "@/components/Navbar";
 import { AgentTimeline } from "@/components/AgentTimeline";
 import { AgentChatbox } from "@/components/AgentChatbox";
 import { SecurityFindings } from "@/components/SecurityFindings";
+import { FileTree } from "@/components/FileTree";
+import { CodePreview } from "@/components/CodePreview";
 
 import {
   Sparkles,
@@ -24,6 +26,12 @@ import {
   AlertCircle,
   Bot,
   ChevronRight,
+  Download,
+  FileCode,
+  Calendar,
+  Folder,
+  ChevronLeft,
+  Save,
 } from "lucide-react";
 
 const projectTypes = [
