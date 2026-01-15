@@ -180,7 +180,7 @@ export default function ProjectView() {
                   {formatDate(project.created_at)}
               </span>
 
-              {project.type === "web" && (
+              {project.project_type && ["web", "frontend", "fullstack"].includes(project.project_type) && (
                   <Button
                       variant="outline"
                       onClick={handlePreview}
