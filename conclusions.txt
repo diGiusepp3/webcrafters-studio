@@ -1,0 +1,3 @@
+te vaak REACT gebruikt --> Prompt aanpassen?
+Preview werkt niet --> Bestanden serveren op een tijdelijke map. (Als code gegenereerd is --> plaatsen in map en zo serveren)
+
