@@ -372,6 +372,164 @@ export default function Generator() {
   };
 
   // ==========================================
+  // EDIT MODE: Chat & Modifications
+  // ==========================================
+  const handleSendChat = async () => {
+    if (!chatInput.trim() || modifying || !projectId) return;
+
+    const userMessage = chatInput.trim();
+    setChatInput("");
+    setModifying(true);
+    setError("");
+
+    // Add user message to chat
+    setChatMessages(prev => [...prev, {
+      message: userMessage,
+      timestamp: new Date().toISOString(),
+      metadata: { role: 'user' }
+    }]);
+
+    // Add "thinking" message
+    setChatMessages(prev => [...prev, {
+      message: "🤔 Analyzing your request and preparing modifications...",
+      timestamp: new Date().toISOString(),
+      metadata: { role: 'agent', status: 'thinking' }
+    }]);
+
+    try {
+      // Call the modify endpoint
+      const res = await api.post(`/projects/${projectId}/modify`, {
+        instruction: userMessage,
+        context: {
+          current_file: selectedFile?.path,
+          project_type: project?.project_type
+        }
+      });
+
+      const { job_id } = res.data;
+      
+      // Start polling for modification status
+      pollModificationStatus(job_id);
+    } catch (err) {
+      setModifying(false);
+      // Remove thinking message
+      setChatMessages(prev => prev.filter(m => m.metadata?.status !== 'thinking'));
+      // Add error message
+      setChatMessages(prev => [...prev, {
+        message: `❌ Error: ${err?.response?.data?.detail || 'Failed to process your request. Please try again.'}`,
+        timestamp: new Date().toISOString(),
+        metadata: { role: 'agent', status: 'error' }
+      }]);
+    }
+  };
+
+  const pollModificationStatus = (jobId) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await api.get(`/projects/modify/status/${jobId}`);
+        const { status, message, updated_files, chat_messages: newMessages, error: jobError } = res.data;
+
+        if (status === 'running') {
+          // Update thinking message
+          setChatMessages(prev => {
+            const filtered = prev.filter(m => m.metadata?.status !== 'thinking');
+            return [...filtered, {
+              message: `🔄 ${message || 'Working on modifications...'}`,
+              timestamp: new Date().toISOString(),
+              metadata: { role: 'agent', status: 'thinking' }
+            }];
+          });
+        }
+
+        if (status === 'done') {
+          clearInterval(pollInterval);
+          setModifying(false);
+
+          // Remove thinking message
+          setChatMessages(prev => prev.filter(m => m.metadata?.status !== 'thinking'));
+
+          // Add success message
+          setChatMessages(prev => [...prev, {
+            message: `✅ ${message || 'Modifications applied successfully!'}`,
+            timestamp: new Date().toISOString(),
+            metadata: { role: 'agent', status: 'success' }
+          }]);
+
+          // Update files if any were modified
+          if (updated_files && updated_files.length > 0) {
+            setIsTyping(true);
+            
+            // Update project files
+            setProject(prev => {
+              if (!prev) return prev;
+              const newFiles = [...prev.files];
+              updated_files.forEach(updatedFile => {
+                const idx = newFiles.findIndex(f => f.path === updatedFile.path);
+                if (idx >= 0) {
+                  newFiles[idx] = updatedFile;
+                } else {
+                  newFiles.push(updatedFile);
+                }
+                // If this file is currently selected, update it
+                if (selectedFile?.path === updatedFile.path) {
+                  setCurrentTypingFile(updatedFile);
+                  setSelectedFile(updatedFile);
+                }
+              });
+              return { ...prev, files: newFiles };
+            });
+
+            // Stop typing animation after a delay
+            setTimeout(() => {
+              setIsTyping(false);
+              setCurrentTypingFile(null);
+            }, 1000);
+          }
+
+          // Refresh project data
+          fetchProject();
+        }
+
+        if (status === 'error') {
+          clearInterval(pollInterval);
+          setModifying(false);
+          setChatMessages(prev => prev.filter(m => m.metadata?.status !== 'thinking'));
+          setChatMessages(prev => [...prev, {
+            message: `❌ Error: ${jobError || 'Modification failed'}`,
+            timestamp: new Date().toISOString(),
+            metadata: { role: 'agent', status: 'error' }
+          }]);
+        }
+      } catch (err) {
+        clearInterval(pollInterval);
+        setModifying(false);
+        setChatMessages(prev => prev.filter(m => m.metadata?.status !== 'thinking'));
+      }
+    }, 2000);
+
+    // Clear interval after 2 minutes (timeout)
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      if (modifying) {
+        setModifying(false);
+        setChatMessages(prev => prev.filter(m => m.metadata?.status !== 'thinking'));
+        setChatMessages(prev => [...prev, {
+          message: '⏱️ Request timed out. Please try again.',
+          timestamp: new Date().toISOString(),
+          metadata: { role: 'agent', status: 'error' }
+        }]);
+      }
+    }, 120000);
+  };
+
+  const handleChatKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendChat();
+    }
+  };
+
+  // ==========================================
   // EDIT MODE: Actions
   // ==========================================
   const handleDownload = async () => {
