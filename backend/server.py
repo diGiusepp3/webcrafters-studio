@@ -58,10 +58,13 @@ app.include_router(credits_router)  # credits & billing
 app.include_router(agent_router)    # live coding agent WebSocket
 
 # Static file serving for previews (must be after all API routes)
+import os
 from fastapi.responses import FileResponse
 from pathlib import Path as PathLib
 
-PREVIEW_ROOT = PathLib("/home/webcrafters/subdomains/studio/previews")
+# Use environment variable or default to /tmp/previews for development
+PREVIEW_ROOT = PathLib(os.environ.get("PREVIEW_ROOT", "/tmp/previews"))
+PREVIEW_ROOT.mkdir(parents=True, exist_ok=True)
 
 @app.get("/preview/{preview_id}/{file_path:path}")
 async def serve_preview_static(preview_id: str, file_path: str):
