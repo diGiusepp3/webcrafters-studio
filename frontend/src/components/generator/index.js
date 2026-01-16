@@ -4,3 +4,5 @@ export { ClarifyDialog } from './ClarifyDialog';
 export { PreviewSidebar } from './PreviewSidebar';
 export { PromptSuggestions } from './PromptSuggestions';
 export { TemplateSelector } from './TemplateSelector';
+export { AgentTimelinePanel } from './AgentTimelinePanel';
+export { DiffViewer } from './DiffViewer';
