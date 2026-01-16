@@ -81,23 +81,42 @@ class CodeForgeAPITester:
             "name": "Test User"
         }
         
-        success, response = self.run_test(
-            "User Registration",
-            "POST",
-            "auth/register",
-            200,
-            data=test_user_data
-        )
+        # First try to register
+        url = f"{self.base_url}/auth/register"
+        headers = {'Content-Type': 'application/json'}
         
-        if success and 'token' in response:
-            self.token = response['token']
-            self.user_id = response.get('user', {}).get('id')
-            print(f"   Token obtained: {self.token[:20]}...")
-            return True
-        elif not success and 'Email already registered' in str(response):
-            print("   ℹ️  User already exists, will try login instead")
-            return True  # Consider this a success since user exists
-        return False
+        self.tests_run += 1
+        print(f"\n🔍 Testing User Registration...")
+        print(f"   URL: {url}")
+        
+        try:
+            response = requests.post(url, json=test_user_data, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                self.tests_passed += 1
+                print(f"✅ Passed - Status: {response.status_code}")
+                response_data = response.json()
+                if 'token' in response_data:
+                    self.token = response_data['token']
+                    self.user_id = response_data.get('user', {}).get('id')
+                    print(f"   Token obtained: {self.token[:20]}...")
+                return True
+            elif response.status_code == 400:
+                error_data = response.json()
+                if 'Email already registered' in error_data.get('detail', ''):
+                    self.tests_passed += 1
+                    print(f"✅ Passed - User already exists (expected)")
+                    return True
+                else:
+                    print(f"❌ Failed - Unexpected 400 error: {error_data}")
+                    return False
+            else:
+                print(f"❌ Failed - Status: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Failed - Error: {str(e)}")
+            return False
 
     def test_login(self):
         """Test user login"""
