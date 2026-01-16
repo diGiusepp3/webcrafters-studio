@@ -12,8 +12,8 @@ import subprocess
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
-# Preview URL prefix
-PREVIEW_PATH_PREFIX = "/preview"
+# Preview URL prefix - must match the API route
+PREVIEW_PATH_PREFIX = "/api/projects/preview"
 
 # Root directory for previews
 # For Emergent: /tmp/previews
