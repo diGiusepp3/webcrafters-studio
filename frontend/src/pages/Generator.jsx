@@ -34,11 +34,18 @@ import {
   Save,
 } from "lucide-react";
 
+const ICONS = {
+  fullstack: Layers,
+  frontend: Layout,
+  backend: Server,
+  any: Code2
+}
+
 const projectTypes = [
-  { id: "fullstack", name: "Full-Stack", icon: <Layers className="w-5 h-5" /> },
-  { id: "frontend", name: "Frontend", icon: <Layout className="w-5 h-5" /> },
-  { id: "backend", name: "Backend", icon: <Server className="w-5 h-5" /> },
-  { id: "any", name: "Any", icon: <Code2 className="w-5 h-5" /> },
+  { id: "fullstack", name: "Full-Stack", icon: Layers },
+  { id: "frontend", name: "Frontend", icon: Layout },
+  { id: "backend", name: "Backend", icon: Server },
+  { id: "any", name: "Any", icon: Code2 },
 ];
 
 export default function Generator() {
@@ -713,23 +720,25 @@ export default function Generator() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      {projectTypes.map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => setProjectType(t.id)}
-                          disabled={loading}
-                          data-testid={`project-type-${t.id}`}
-                          className={`p-4 rounded-lg border text-left transition-all ${
-                            projectType === t.id
-                              ? "bg-cyan-500/10 border-cyan-500/50 text-cyan-400"
-                              : "bg-black/30 border-white/10 text-gray-400 hover:border-white/20"
-                          } ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
-                        >
-                          {t.icon}
-                          <div className="mt-2 text-sm font-medium">{t.name}</div>
-                        </button>
-                      ))}
+                      {projectTypes.map((t) => {
+                        const Icon = ICONS[t.id];
+                        return (
+                            <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => setProjectType(t.id)}
+                                disabled={loading}
+                                className={`p-4 rounded-lg border text-left transition-all ${
+                                    projectType === t.id
+                                        ? "bg-cyan-500/10 border-cyan-500/50 text-cyan-400"
+                                        : "bg-black/30 border-white/10 text-gray-400 hover:border-white/20"
+                                }`}
+                            >
+                              <Icon className="w-5 h-5" />
+                              <div className="mt-2 text-sm font-medium">{t.name}</div>
+                            </button>
+                        );
+                      })}
                     </div>
                   </CardContent>
                 </Card>
