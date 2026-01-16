@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 
 class CodeForgeAPITester:
-    def __init__(self, base_url="https://appfix-dev.preview.emergentagent.com/api"):
+    def __init__(self, base_url="https://glassgpt-overhaul.preview.emergentagent.com/api"):
         self.base_url = base_url
         self.token = None
         self.tests_run = 0
