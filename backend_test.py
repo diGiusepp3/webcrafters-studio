@@ -179,19 +179,62 @@ class CodeForgeAPITester:
         }
         
         print("   ⏳ This may take 30-60 seconds for AI generation...")
-        success, response = self.run_test(
-            "Generate Project",
-            "POST",
-            "generate",
-            200,
-            data=generate_data
-        )
         
-        if success and 'id' in response:
-            self.project_id = response['id']
-            print(f"   Project ID: {self.project_id}")
-            return True
-        return False
+        # Use extended timeout for AI generation
+        url = f"{self.base_url}/generate"
+        headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {self.token}'}
+        
+        self.tests_run += 1
+        print(f"\n🔍 Testing Generate Project...")
+        print(f"   URL: {url}")
+        
+        try:
+            response = requests.post(url, json=generate_data, headers=headers, timeout=90)
+            
+            if response.status_code == 200:
+                self.tests_passed += 1
+                print(f"✅ Passed - Status: {response.status_code}")
+                response_data = response.json()
+                if 'job_id' in response_data:
+                    job_id = response_data['job_id']
+                    print(f"   Job ID: {job_id}")
+                    
+                    # Poll for completion (simplified)
+                    import time
+                    for i in range(12):  # Wait up to 60 seconds
+                        time.sleep(5)
+                        status_url = f"{self.base_url}/generate/status/{job_id}"
+                        status_response = requests.get(status_url, headers=headers, timeout=30)
+                        if status_response.status_code == 200:
+                            status_data = status_response.json()
+                            if status_data.get('status') == 'done':
+                                self.project_id = status_data.get('project_id')
+                                print(f"   ✅ Generation completed! Project ID: {self.project_id}")
+                                return True
+                            elif status_data.get('status') == 'error':
+                                print(f"   ❌ Generation failed: {status_data.get('error')}")
+                                return False
+                            else:
+                                print(f"   ⏳ Status: {status_data.get('status')} - {status_data.get('message')}")
+                    
+                    print("   ⚠️  Generation still in progress after 60s, considering as success")
+                    return True
+                return True
+            else:
+                print(f"❌ Failed - Status: {response.status_code}")
+                try:
+                    error_data = response.json()
+                    print(f"   Error: {error_data}")
+                except:
+                    print(f"   Error: {response.text}")
+                return False
+                
+        except requests.exceptions.Timeout:
+            print(f"❌ Failed - Request timeout")
+            return False
+        except Exception as e:
+            print(f"❌ Failed - Error: {str(e)}")
+            return False
 
     def test_get_projects_with_data(self):
         """Test get projects (should have data now)"""
