@@ -6,6 +6,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Generator from './pages/Generator';
 import Credits from './pages/Credits';
+import Settings from './pages/Settings';
 import { Loader2 } from 'lucide-react';
 
 // Protected Route Component
