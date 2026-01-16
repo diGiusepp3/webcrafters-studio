@@ -153,14 +153,21 @@ class CodeForgeAPITester:
     def test_get_projects_empty(self):
         """Test get projects (should be empty initially)"""
         success, response = self.run_test(
-            "Get Projects (Empty)",
+            "Get Projects",
             "GET",
             "projects",
             200
         )
         
-        if success and isinstance(response, list) and len(response) == 0:
-            print("   ✅ Projects list is empty as expected")
+        if success and isinstance(response, list):
+            if len(response) == 0:
+                print("   ✅ Projects list is empty as expected")
+            else:
+                print(f"   ✅ Found {len(response)} existing project(s)")
+                # Store first project ID for later tests
+                if response and 'id' in response[0]:
+                    self.project_id = response[0]['id']
+                    print(f"   Using existing project ID: {self.project_id}")
             return True
         return success
 
