@@ -1,130 +1,200 @@
-// frontend/src/components/Navbar.jsx
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { Button } from './ui/button';
-import { LogOut, History, Sparkles, Coins, Plus, Bell, Gift } from 'lucide-react';
-import { WebcraftersLogo } from "@/components/WebcraftersLogo";
-import api from '@/api';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Menu, X, Sparkles, User, Settings, LogOut, CreditCard,
+  LayoutDashboard, Wand2, ChevronDown, Zap
+} from 'lucide-react';
 
-export const Navbar = () => {
-  const { user, logout, isAuthenticated } = useAuth();
+export function Navbar() {
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { isAuthenticated, user, logout } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
-  const [credits, setCredits] = useState(null);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchCredits();
-    }
-  }, [isAuthenticated]);
-
-  const fetchCredits = async () => {
-    try {
-      const res = await api.get('/credits/balance');
-      setCredits(res.data.balance_display);
-    } catch (err) {
-      console.error('Failed to fetch credits:', err);
-      setCredits('0.00');
-    }
-  };
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 20);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const handleLogout = () => {
     logout();
     navigate('/');
   };
 
+  const navLinks = isAuthenticated
+    ? [
+        { href: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
+        { href: '/generate', label: 'Generate', icon: <Wand2 className="w-4 h-4" /> },
+        { href: '/credits', label: 'Credits', icon: <CreditCard className="w-4 h-4" /> },
+      ]
+    : [];
+
   return (
-    <header className="sticky top-0 z-50 bg-black/60 backdrop-blur-md border-b border-white/5" data-testid="navbar">
-      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 group" data-testid="navbar-logo">
-          <WebcraftersLogo size={40} />
-          <span className="font-heading text-xl font-bold text-white group-hover:text-cyan-400 transition-colors">
-            Webcrafters Studio <span className="text-cyan-400">(AI)</span>
-          </span>
-        </Link>
+    <nav
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        isScrolled
+          ? 'bg-[#030712]/80 backdrop-blur-xl border-b border-white/5'
+          : 'bg-transparent'
+      }`}
+    >
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="flex items-center justify-between h-16">
+          {/* Logo */}
+          <Link to="/" className="flex items-center gap-3 group">
+            <div className="relative">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-violet-500 flex items-center justify-center shadow-lg shadow-cyan-500/20 group-hover:shadow-cyan-500/40 transition-all">
+                <Sparkles className="w-5 h-5 text-white" />
+              </div>
+              <div className="absolute -inset-1 rounded-xl bg-gradient-to-br from-cyan-500 to-violet-500 opacity-0 group-hover:opacity-20 blur-lg transition-opacity" />
+            </div>
+            <div className="flex items-baseline gap-1">
+              <span className="font-heading text-xl font-bold text-white">Webcrafters</span>
+              <span className="font-heading text-xl font-bold gradient-text">Studio</span>
+            </div>
+          </Link>
 
-        <nav className="flex items-center gap-4">
-          {isAuthenticated ? (
-            <>
-              <Link to="/generate" data-testid="nav-generate">
-                <Button variant="ghost" className="text-gray-300 hover:text-white hover:bg-white/5">
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Generate
-                </Button>
+          {/* Desktop Nav */}
+          <div className="hidden md:flex items-center gap-1">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                to={link.href}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  location.pathname === link.href
+                    ? 'text-cyan-400 bg-cyan-500/10'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {link.icon}
+                {link.label}
               </Link>
-              <Link to="/dashboard" data-testid="nav-dashboard">
-                <Button variant="ghost" className="text-gray-300 hover:text-white hover:bg-white/5">
-                  <History className="w-4 h-4 mr-2" />
-                  History
-                </Button>
-              </Link>
+            ))}
+          </div>
 
-              {/* Credits Display - Like emergent.sh */}
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/40 border border-white/10">
-                <div className="flex items-center gap-1.5">
-                  <Coins className="w-4 h-4 text-amber-400" />
-                  <span className="text-white font-medium" data-testid="navbar-credits">
-                    {credits || '---'}
-                  </span>
-                </div>
-                <Link to="/credits" data-testid="nav-buy-credits">
-                  <Button
-                    size="sm"
-                    className="h-7 px-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold hover:from-amber-400 hover:to-orange-400"
+          {/* Right side */}
+          <div className="flex items-center gap-3">
+            {isAuthenticated ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-violet-500 flex items-center justify-center text-white text-sm font-bold">
+                      {user?.name?.charAt(0)?.toUpperCase() || 'U'}
+                    </div>
+                    <span className="hidden sm:block text-sm text-white font-medium">
+                      {user?.name || 'User'}
+                    </span>
+                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="w-56 glass-panel border-white/10 p-2"
+                >
+                  <div className="px-3 py-2 mb-2">
+                    <p className="text-sm font-medium text-white">{user?.name}</p>
+                    <p className="text-xs text-gray-500">{user?.email}</p>
+                  </div>
+                  <DropdownMenuSeparator className="bg-white/10" />
+                  <DropdownMenuItem
+                    onClick={() => navigate('/dashboard')}
+                    className="flex items-center gap-2 px-3 py-2 text-gray-300 hover:text-white cursor-pointer"
                   >
-                    <Plus className="w-3 h-3 mr-1" />
-                    Buy Credits
+                    <LayoutDashboard className="w-4 h-4" />
+                    Dashboard
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => navigate('/generate')}
+                    className="flex items-center gap-2 px-3 py-2 text-gray-300 hover:text-white cursor-pointer"
+                  >
+                    <Wand2 className="w-4 h-4" />
+                    New Project
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => navigate('/credits')}
+                    className="flex items-center gap-2 px-3 py-2 text-gray-300 hover:text-white cursor-pointer"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    Credits
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-white/10" />
+                  <DropdownMenuItem
+                    onClick={() => navigate('/settings')}
+                    className="flex items-center gap-2 px-3 py-2 text-gray-300 hover:text-white cursor-pointer"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={handleLogout}
+                    className="flex items-center gap-2 px-3 py-2 text-red-400 hover:text-red-300 cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <>
+                <Link to="/login">
+                  <Button variant="ghost" className="text-gray-400 hover:text-white">
+                    Login
                   </Button>
                 </Link>
-              </div>
+                <Link to="/register">
+                  <Button className="btn-primary">
+                    <Zap className="w-4 h-4 mr-2" />
+                    Get Started
+                  </Button>
+                </Link>
+              </>
+            )}
 
-              {/* Additional Icons */}
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-gray-400 hover:text-white hover:bg-white/5 h-8 w-8"
-                >
-                  <Bell className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-gray-400 hover:text-white hover:bg-white/5 h-8 w-8"
-                >
-                  <Gift className="w-4 h-4" />
-                </Button>
-              </div>
+            {/* Mobile menu button */}
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="md:hidden p-2 rounded-lg hover:bg-white/5 text-gray-400"
+            >
+              {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          </div>
+        </div>
 
-              <div className="flex items-center gap-3 pl-3 border-l border-white/10">
-                <span className="text-sm text-gray-400">{user?.name}</span>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  onClick={handleLogout}
-                  className="text-gray-400 hover:text-white hover:bg-white/5"
-                  data-testid="logout-btn"
+        {/* Mobile menu */}
+        {isMobileMenuOpen && (
+          <div className="md:hidden py-4 border-t border-white/5">
+            <div className="flex flex-col gap-1">
+              {navLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  to={link.href}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
+                    location.pathname === link.href
+                      ? 'text-cyan-400 bg-cyan-500/10'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  }`}
                 >
-                  <LogOut className="w-4 h-4" />
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <Link to="/login" data-testid="nav-login">
-                <Button variant="ghost" className="text-gray-300 hover:text-white hover:bg-white/5">
-                  Login
-                </Button>
-              </Link>
-              <Link to="/register" data-testid="nav-register">
-                <Button className="bg-cyan-500 text-black font-bold hover:bg-cyan-400 transition-all hover:shadow-[0_0_20px_rgba(6,182,212,0.6)]">
-                  Get Started
-                </Button>
-              </Link>
-            </>
-          )}
-        </nav>
+                  {link.icon}
+                  {link.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-    </header>
+    </nav>
   );
-};
+}
