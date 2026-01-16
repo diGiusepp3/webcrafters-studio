@@ -130,6 +130,10 @@ export default function Generator() {
   const [securityFindings, setSecurityFindings] = useState([]);
   const [currentJobId, setCurrentJobId] = useState(null);
 
+  // Chat input for modifications
+  const [chatInput, setChatInput] = useState("");
+  const [modifying, setModifying] = useState(false);
+
   // Clarify
   const [clarifyJobId, setClarifyJobId] = useState(null);
   const [clarifyQuestions, setClarifyQuestions] = useState([]);
