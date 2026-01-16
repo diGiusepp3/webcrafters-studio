@@ -238,8 +238,8 @@ function fileExportHasPortals({
   return found;
 }
 
-// Moved inside visitor to avoid cross-file pollution
-// const VISITED_COMPOSITES = new Set(); // Removed - managed per-visitor-call now
+// Per-file visited composites cache - cleared at start of each file
+let VISITED_COMPOSITES = new Set();
 
 // Decide at a usage site whether <ElementName /> is a composite that should be excluded
 function usageIsCompositePortal({
@@ -250,8 +250,12 @@ function usageIsCompositePortal({
                                   traverse,
                                   parser,
                                   RADIX_ROOTS,
+                                  depth = 0,
+                                  maxDepth = 5,
                                 }) {
-  // 🔒 RECURSION GUARD (CRUCIAAL)
+  // 🔒 RECURSION GUARD - limit depth AND visited tracking
+  if (depth > maxDepth) return false;
+  
   const file =
       state.filename ||
       state.file?.opts?.filename ||
