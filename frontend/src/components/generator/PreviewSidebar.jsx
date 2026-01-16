@@ -1,219 +1,88 @@
-// frontend/src/components/generator/PreviewSidebar.jsx
-// Collapsible preview sidebar with iframe
-
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
+import { X, ExternalLink, RefreshCw, Maximize2, Minimize2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Monitor,
-  ExternalLink,
-  RefreshCw,
-  ChevronRight,
-  ChevronLeft,
-  Maximize2,
-  Minimize2,
-  X,
-  Loader2,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
 
-export function PreviewSidebar({
-  previewUrl,
-  isOpen,
-  onToggle,
-  isLoading = false,
-  projectType,
-  className,
-}) {
+export function PreviewSidebar({ previewUrl, isOpen, onToggle, isLoading, projectType }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const iframeRef = useRef(null);
 
-  const handleRefresh = () => {
-    setRefreshKey(prev => prev + 1);
-  };
-
-  const handleOpenExternal = () => {
-    if (previewUrl) {
-      window.open(previewUrl, '_blank', 'noopener,noreferrer');
-    }
-  };
-
-  // Handle fullscreen
-  useEffect(() => {
-    const handleEsc = (e) => {
-      if (e.key === 'Escape' && isFullscreen) {
-        setIsFullscreen(false);
-      }
-    };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, [isFullscreen]);
-
-  // Toggle button when closed
   if (!isOpen) {
     return (
       <button
         onClick={onToggle}
-        className={cn(
-          'fixed right-0 top-1/2 -translate-y-1/2 z-40',
-          'flex items-center gap-2 px-2 py-4 rounded-l-lg',
-          'bg-cyan-500/20 border border-r-0 border-cyan-500/30',
-          'text-cyan-400 hover:bg-cyan-500/30 transition-all',
-          className
-        )}
-        data-testid="preview-toggle-open"
+        className="fixed right-0 top-1/2 -translate-y-1/2 bg-cyan-500 text-black px-2 py-4 rounded-l-lg shadow-lg hover:bg-cyan-400 transition-colors"
+        title="Open Preview"
       >
-        <ChevronLeft className="w-5 h-5" />
-        <Monitor className="w-5 h-5" />
+        <span className="writing-vertical text-xs font-bold">Preview</span>
       </button>
     );
   }
 
-  // Fullscreen overlay
-  if (isFullscreen && previewUrl) {
-    return (
-      <div className="fixed inset-0 z-50 bg-black">
-        <div className="absolute top-4 right-4 z-10 flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            className="bg-black/50 border-white/20 text-white hover:bg-white/10"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleOpenExternal}
-            className="bg-black/50 border-white/20 text-white hover:bg-white/10"
-          >
-            <ExternalLink className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsFullscreen(false)}
-            className="bg-black/50 border-white/20 text-white hover:bg-white/10"
-          >
-            <Minimize2 className="w-4 h-4" />
-          </Button>
-        </div>
-        <iframe
-          key={refreshKey}
-          ref={iframeRef}
-          src={previewUrl}
-          className="w-full h-full"
-          title="Preview"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-        />
-      </div>
-    );
-  }
+  const width = isFullscreen ? 'w-1/2' : 'w-96';
 
-  // Sidebar panel
   return (
-    <div
-      className={cn(
-        'w-[400px] lg:w-[500px] flex-shrink-0 h-full',
-        'flex flex-col border-l border-white/10 bg-[#0a0a0f]',
-        className
-      )}
-      data-testid="preview-sidebar"
-    >
+    <div className={`${width} border-l border-white/5 bg-[#0a0f1a] flex-shrink-0 flex flex-col transition-all duration-300`}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-black/40">
-        <div className="flex items-center gap-2">
-          <Monitor className="w-4 h-4 text-cyan-400" />
-          <span className="text-sm font-medium text-white">Preview</span>
-          {projectType && (
-            <span className="text-xs text-gray-500 bg-white/5 px-2 py-0.5 rounded">
-              {projectType}
-            </span>
-          )}
-        </div>
+      <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+        <span className="text-sm font-medium text-white">Live Preview</span>
         <div className="flex items-center gap-1">
           {previewUrl && (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRefresh}
-                className="h-7 w-7 p-0 text-gray-400 hover:text-white"
-                title="Refresh"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsFullscreen(true)}
-                className="h-7 w-7 p-0 text-gray-400 hover:text-white"
-                title="Fullscreen"
-              >
-                <Maximize2 className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleOpenExternal}
-                className="h-7 w-7 p-0 text-gray-400 hover:text-white"
-                title="Open in new tab"
-              >
-                <ExternalLink className="w-4 h-4" />
-              </Button>
-            </>
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+              title="Open in new tab"
+            >
+              <ExternalLink className="w-4 h-4" />
+            </a>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+            title={isFullscreen ? 'Minimize' : 'Maximize'}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+          <button
             onClick={onToggle}
-            className="h-7 w-7 p-0 text-gray-400 hover:text-white"
+            className="p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
             title="Close preview"
           >
-            <ChevronRight className="w-4 h-4" />
-          </Button>
+            <X className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-hidden">
+      {/* Preview content */}
+      <div className="flex-1 relative">
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-500">
-            <Loader2 className="w-8 h-8 mb-3 animate-spin text-cyan-400" />
-            <span className="text-sm">Building preview...</span>
+          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0f1a]">
+            <div className="text-center">
+              <Loader2 className="w-8 h-8 text-cyan-400 animate-spin mx-auto mb-3" />
+              <p className="text-gray-400 text-sm">Building preview...</p>
+            </div>
           </div>
         ) : previewUrl ? (
           <iframe
-            key={refreshKey}
-            ref={iframeRef}
             src={previewUrl}
-            className="w-full h-full bg-white"
-            title="Preview"
+            className="w-full h-full border-0 bg-white"
+            title="Project Preview"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
           />
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-gray-500">
-            <Monitor className="w-10 h-10 mb-3 opacity-30" />
-            <span className="text-sm">No preview available</span>
-            <span className="text-xs text-gray-600 mt-1">
-              Generate or open a project to see preview
-            </span>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center text-gray-500">
+              <p className="mb-2">No preview available</p>
+              <p className="text-xs">Click "Preview" to generate a live preview</p>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Footer with URL */}
+      {/* Footer with info */}
       {previewUrl && (
-        <div className="px-4 py-2 border-t border-white/10 bg-black/40">
-          <a
-            href={previewUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-cyan-400 hover:underline truncate block"
-          >
-            {previewUrl}
-          </a>
+        <div className="px-4 py-2 border-t border-white/5 text-xs text-gray-500">
+          <p className="truncate">{previewUrl}</p>
         </div>
       )}
     </div>

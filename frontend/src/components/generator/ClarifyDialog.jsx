@@ -1,66 +1,65 @@
-// frontend/src/components/generator/ClarifyDialog.jsx
-// Clarification questions dialog
-
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { HelpCircle, Send, Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Bot, Send, Loader2, HelpCircle } from 'lucide-react';
 
-export function ClarifyDialog({
-  questions = [],
-  answers = {},
-  onAnswerChange,
-  onSubmit,
-  isSubmitting = false,
-  className,
-}) {
-  if (!questions || questions.length === 0) {
-    return null;
-  }
+export function ClarifyDialog({ questions, answers, onAnswerChange, onSubmit, isSubmitting }) {
+  if (!questions || questions.length === 0) return null;
 
   return (
-    <Card className={cn('bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-amber-500/30', className)}>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-amber-400 text-lg">
-          <HelpCircle className="w-5 h-5" />
-          Clarification Needed
-        </CardTitle>
-        <p className="text-gray-400 text-sm">
-          Please answer these questions to help us build exactly what you need.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {questions.map((question, index) => (
-          <div key={index} className="space-y-2">
-            <Label className="text-white font-medium">
-              {index + 1}. {question}
-            </Label>
-            <Textarea
-              value={answers[`q${index}`] || ''}
-              onChange={(e) => onAnswerChange(`q${index}`, e.target.value)}
-              placeholder="Your answer..."
-              className="bg-black/40 border-white/10 text-white placeholder:text-gray-500 min-h-[80px]"
-              disabled={isSubmitting}
-            />
+    <div className="glass-card rounded-xl overflow-hidden">
+      <div className="p-4 border-b border-white/5 bg-cyan-500/5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+            <Bot className="w-5 h-5 text-cyan-400" />
           </div>
-        ))}
+          <div>
+            <h3 className="font-heading font-bold text-white">AI Agent Needs Clarification</h3>
+            <p className="text-sm text-gray-400">Please answer these questions for better results</p>
+          </div>
+        </div>
+      </div>
 
+      <div className="p-4 space-y-4">
+        {questions.map((question, index) => {
+          const key = `q${index}`;
+          return (
+            <div key={index} className="space-y-2">
+              <label className="flex items-start gap-2 text-sm text-white">
+                <HelpCircle className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" />
+                <span>{question}</span>
+              </label>
+              <Textarea
+                value={answers[key] || ''}
+                onChange={(e) => onAnswerChange(key, e.target.value)}
+                placeholder="Type your answer..."
+                className="bg-black/40 border-white/10 text-white placeholder:text-gray-500 min-h-[80px]"
+                disabled={isSubmitting}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="p-4 border-t border-white/5">
         <Button
           onClick={onSubmit}
-          disabled={isSubmitting || Object.keys(answers).length === 0}
-          className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
-          data-testid="clarify-submit"
+          disabled={isSubmitting || Object.keys(answers).length < questions.length}
+          className="w-full btn-primary"
         >
           {isSubmitting ? (
-            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Submitting...</>
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Processing...
+            </>
           ) : (
-            <><Send className="w-4 h-4 mr-2" /> Continue Generation</>
+            <>
+              <Send className="w-4 h-4 mr-2" />
+              Submit Answers & Continue
+            </>
           )}
         </Button>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -1,183 +1,158 @@
-// frontend/src/components/generator/LiveCodeEditor.jsx
-// Live code editor with typing effect and scrollable view
-
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check, FileCode, ChevronDown, ChevronUp } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Loader2, FileCode } from 'lucide-react';
 
-const getLanguage = (filename) => {
-  if (!filename) return 'text';
-  const ext = filename.split('.').pop().toLowerCase();
-  const langMap = {
-    js: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
-    py: 'python', json: 'json', html: 'html', css: 'css',
-    md: 'markdown', yml: 'yaml', yaml: 'yaml', sh: 'bash',
-    sql: 'sql', php: 'php', rb: 'ruby', go: 'go', rs: 'rust',
-    java: 'java', kt: 'kotlin', swift: 'swift', c: 'c', cpp: 'cpp',
-    env: 'bash', txt: 'text', xml: 'xml', toml: 'toml',
-  };
-  return langMap[ext] || 'text';
+const customStyle = {
+  ...oneDark,
+  'pre[class*="language-"]': {
+    ...oneDark['pre[class*="language-"]'],
+    background: 'transparent',
+    margin: 0,
+    padding: '1rem',
+    fontSize: '0.875rem',
+    lineHeight: '1.6',
+  },
+  'code[class*="language-"]': {
+    ...oneDark['code[class*="language-"]'],
+    background: 'transparent',
+    fontFamily: "'JetBrains Mono', monospace",
+  },
 };
 
-export function LiveCodeEditor({
-  file,
-  isTyping = false,
-  typingSpeed = 5,
-  className,
-  maxHeight = '500px',
-  showLineNumbers = true,
-}) {
+export function LiveCodeEditor({ file, isTyping, className = '', maxHeight = 'auto' }) {
   const [displayedContent, setDisplayedContent] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(true);
-  const containerRef = useRef(null);
-  const typingRef = useRef(null);
-  const prevFileRef = useRef(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const contentRef = useRef('');
+  const animationRef = useRef(null);
 
-  const language = useMemo(() => getLanguage(file?.path), [file?.path]);
-  const fullContent = file?.content || '';
+  // Detect language from file path
+  const detectLanguage = (path) => {
+    if (!path) return 'text';
+    const ext = path.split('.').pop()?.toLowerCase() || '';
+    const langMap = {
+      js: 'javascript',
+      jsx: 'jsx',
+      ts: 'typescript',
+      tsx: 'tsx',
+      py: 'python',
+      html: 'html',
+      css: 'css',
+      json: 'json',
+      md: 'markdown',
+      yml: 'yaml',
+      yaml: 'yaml',
+      sh: 'bash',
+      bash: 'bash',
+      sql: 'sql',
+      go: 'go',
+      rs: 'rust',
+      java: 'java',
+      kt: 'kotlin',
+      swift: 'swift',
+      rb: 'ruby',
+      php: 'php',
+      c: 'c',
+      cpp: 'cpp',
+      cs: 'csharp',
+      xml: 'xml',
+      svg: 'xml',
+    };
+    return langMap[ext] || 'text';
+  };
 
-  // Live typing effect
+  // Handle typing animation
   useEffect(() => {
-    if (!file) {
+    if (!file?.content) {
       setDisplayedContent('');
       return;
     }
 
-    // If same file, just update content
-    if (prevFileRef.current?.path === file.path && !isTyping) {
-      setDisplayedContent(fullContent);
-      return;
-    }
+    const newContent = file.content;
 
-    prevFileRef.current = file;
+    // If typing animation is active, animate the content
+    if (isTyping && newContent !== contentRef.current) {
+      setIsAnimating(true);
+      const startIndex = contentRef.current.length;
+      let currentIndex = startIndex;
 
-    if (isTyping && fullContent) {
-      setDisplayedContent('');
-      let index = 0;
-      
-      // Clear previous interval
-      if (typingRef.current) {
-        clearInterval(typingRef.current);
+      // Clear previous animation
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
       }
 
-      typingRef.current = setInterval(() => {
-        if (index < fullContent.length) {
-          // Type multiple characters per tick for speed
-          const chunk = fullContent.slice(index, index + typingSpeed);
-          setDisplayedContent(prev => prev + chunk);
-          index += typingSpeed;
-          
-          // Auto-scroll to bottom
-          if (containerRef.current) {
-            containerRef.current.scrollTop = containerRef.current.scrollHeight;
-          }
+      const animate = () => {
+        if (currentIndex < newContent.length) {
+          // Type multiple characters at once for speed
+          const charsToAdd = Math.min(10, newContent.length - currentIndex);
+          currentIndex += charsToAdd;
+          setDisplayedContent(newContent.substring(0, currentIndex));
+          animationRef.current = requestAnimationFrame(animate);
         } else {
-          clearInterval(typingRef.current);
-        }
-      }, 10);
-
-      return () => {
-        if (typingRef.current) {
-          clearInterval(typingRef.current);
+          setIsAnimating(false);
+          contentRef.current = newContent;
         }
       };
-    } else {
-      setDisplayedContent(fullContent);
-    }
-  }, [file, fullContent, isTyping, typingSpeed]);
 
-  const handleCopy = async () => {
-    if (!fullContent) return;
-    await navigator.clipboard.writeText(fullContent);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+      animationRef.current = requestAnimationFrame(animate);
+    } else {
+      // No animation, just set content
+      setDisplayedContent(newContent);
+      contentRef.current = newContent;
+    }
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [file?.content, file?.path, isTyping]);
 
   if (!file) {
     return (
-      <div className={cn(
-        'flex flex-col items-center justify-center h-64 text-gray-500 bg-[#1e1e1e] rounded-lg border border-white/10',
-        className
-      )}>
-        <FileCode className="w-10 h-10 mb-3 opacity-30" />
-        <span className="text-sm">Select a file to view code</span>
+      <div className={`flex items-center justify-center h-full bg-[#0a0f1a] ${className}`}>
+        <div className="text-center text-gray-500">
+          <FileCode className="w-12 h-12 mx-auto mb-3 opacity-50" />
+          <p>Select a file to view its content</p>
+        </div>
       </div>
     );
   }
 
-  return (
-    <div className={cn('flex flex-col rounded-lg border border-white/10 bg-[#1e1e1e] overflow-hidden', className)}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-black/40 border-b border-white/10">
-        <div className="flex items-center gap-2">
-          <FileCode className="w-4 h-4 text-cyan-400" />
-          <span className="text-cyan-400 font-mono text-sm truncate max-w-[200px]">
-            {file.path}
-          </span>
-          <span className="text-xs text-gray-500 bg-white/5 px-2 py-0.5 rounded">
-            {language}
-          </span>
-          {isTyping && displayedContent.length < fullContent.length && (
-            <span className="text-xs text-green-400 animate-pulse">typing...</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="text-gray-400 hover:text-white h-7 px-2"
-          >
-            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleCopy}
-            className="text-gray-400 hover:text-white h-7"
-          >
-            {copied ? (
-              <><Check className="w-4 h-4 mr-1 text-green-400" /> Copied</>
-            ) : (
-              <><Copy className="w-4 h-4 mr-1" /> Copy</>
-            )}
-          </Button>
-        </div>
-      </div>
+  const language = file.language || detectLanguage(file.path);
 
-      {/* Code Content */}
-      {isExpanded && (
-        <div
-          ref={containerRef}
-          className="overflow-auto"
-          style={{ maxHeight }}
-        >
-          <SyntaxHighlighter
-            language={language}
-            style={vscDarkPlus}
-            customStyle={{
-              margin: 0,
-              padding: '1rem',
-              background: 'transparent',
-              fontSize: '0.8125rem',
-              lineHeight: '1.6',
-              minHeight: '100px',
-            }}
-            showLineNumbers={showLineNumbers}
-            lineNumberStyle={{
-              minWidth: '3em',
-              paddingRight: '1em',
-              color: '#4a5568',
-              userSelect: 'none',
-            }}
-          >
-            {displayedContent || ' '}
-          </SyntaxHighlighter>
+  return (
+    <div className={`relative bg-[#0a0f1a] ${className}`} style={{ maxHeight, overflow: 'auto' }}>
+      {/* Typing indicator */}
+      {isAnimating && (
+        <div className="absolute top-2 right-2 flex items-center gap-2 px-2 py-1 rounded-md bg-cyan-500/20 text-cyan-400 text-xs">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          Writing...
         </div>
+      )}
+
+      <SyntaxHighlighter
+        language={language}
+        style={customStyle}
+        showLineNumbers
+        lineNumberStyle={{
+          minWidth: '3em',
+          paddingRight: '1em',
+          color: '#4a5568',
+          userSelect: 'none',
+        }}
+        customStyle={{
+          background: 'transparent',
+          margin: 0,
+          padding: 0,
+        }}
+      >
+        {displayedContent || '// Empty file'}
+      </SyntaxHighlighter>
+
+      {/* Cursor animation when typing */}
+      {isAnimating && (
+        <span className="inline-block w-2 h-5 bg-cyan-400 animate-pulse ml-1" />
       )}
     </div>
   );
