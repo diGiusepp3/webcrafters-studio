@@ -298,6 +298,8 @@ function usageIsCompositePortal({
               traverse,
               parser,
               RADIX_ROOTS,
+              depth: depth + 1,
+              maxDepth,
             });
             if (childHit) {
               hit = true;
