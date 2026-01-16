@@ -12,7 +12,7 @@ from starlette.websockets import WebSocketState
 
 from backend.services.coding_agent import get_or_create_session, get_session, ACTIVE_SESSIONS
 
-router = APIRouter(tags=["agent"])
+router = APIRouter(prefix="/api", tags=["agent"])
 
 # Connected WebSocket clients
 CONNECTED_CLIENTS: Dict[str, WebSocket] = {}
