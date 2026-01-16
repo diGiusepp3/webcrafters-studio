@@ -799,6 +799,10 @@ const babelMetadataPlugin = ({ types: t }) => {
 
   return {
     name: "element-metadata-plugin",
+    pre() {
+      // Reset visited composites cache per file to prevent cross-file pollution
+      VISITED_COMPOSITES.clear();
+    },
     visitor: {
       // Add metadata attributes to React components (capitalized JSX)
       JSXElement(jsxPath, state) {
