@@ -199,9 +199,11 @@ export default function Generator() {
 
   // Cleanup
   useEffect(() => {
+    const poll = pollRef.current;
+    const ws = wsRef.current;
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.close();
+      if (poll) clearInterval(poll);
+      if (ws?.readyState === WebSocket.OPEN) ws.close();
     };
   }, []);
 
