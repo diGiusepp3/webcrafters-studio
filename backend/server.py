@@ -57,6 +57,7 @@ app.include_router(root_router)
 app.include_router(preview_router)  # serveert /preview/{preview_id}/...
 app.include_router(credits_router)  # credits & billing
 app.include_router(agent_router)    # live coding agent WebSocket
+app.include_router(modify_router)   # project modifications via AI
 
 # Static file serving for previews (must be after all API routes)
 import os
