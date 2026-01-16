@@ -280,6 +280,9 @@ async def get_generation_status(job_id: str, user=Depends(get_current_user)):
         "security_findings": job.get("security_findings", []),
         "applied_fixes": job.get("applied_fixes", []),
         
+        # Live file updates
+        "files": job.get("files", []),
+        
         "started_at": job.get("started_at"),
         "updated_at": job.get("updated_at"),
     }
