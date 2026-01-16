@@ -238,7 +238,8 @@ function fileExportHasPortals({
   return found;
 }
 
-const VISITED_COMPOSITES = new Set();
+// Moved inside visitor to avoid cross-file pollution
+// const VISITED_COMPOSITES = new Set(); // Removed - managed per-visitor-call now
 
 // Decide at a usage site whether <ElementName /> is a composite that should be excluded
 function usageIsCompositePortal({
