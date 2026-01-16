@@ -1,118 +1,166 @@
-// frontend/src/components/SecurityFindings.jsx
-import { Shield, AlertTriangle, AlertCircle, Info, CheckCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
+import { Shield, AlertTriangle, AlertCircle, Info, CheckCircle, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { useState } from 'react';
 
-const SeverityBadge = ({ severity }) => {
-  const styles = {
-    high: "bg-red-500/20 text-red-400 border-red-500/30",
-    medium: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    low: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  };
-
-  const icons = {
-    high: AlertCircle,
-    medium: AlertTriangle,
-    low: Info,
-  };
-
-  const Icon = icons[severity] || Info;
-
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border",
-        styles[severity] || styles.low
-      )}
-    >
-      <Icon className="w-3 h-3" />
-      {severity}
-    </span>
-  );
+const severityConfig = {
+  high: {
+    icon: <AlertCircle className="w-4 h-4" />,
+    color: 'text-red-400',
+    bg: 'bg-red-500/10',
+    border: 'border-red-500/30',
+    label: 'High',
+  },
+  medium: {
+    icon: <AlertTriangle className="w-4 h-4" />,
+    color: 'text-yellow-400',
+    bg: 'bg-yellow-500/10',
+    border: 'border-yellow-500/30',
+    label: 'Medium',
+  },
+  low: {
+    icon: <Info className="w-4 h-4" />,
+    color: 'text-blue-400',
+    bg: 'bg-blue-500/10',
+    border: 'border-blue-500/30',
+    label: 'Low',
+  },
+  info: {
+    icon: <Info className="w-4 h-4" />,
+    color: 'text-gray-400',
+    bg: 'bg-gray-500/10',
+    border: 'border-gray-500/30',
+    label: 'Info',
+  },
+  fixed: {
+    icon: <CheckCircle className="w-4 h-4" />,
+    color: 'text-green-400',
+    bg: 'bg-green-500/10',
+    border: 'border-green-500/30',
+    label: 'Fixed',
+  },
 };
 
-const FindingItem = ({ finding }) => {
+function FindingItem({ finding }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const severity = finding.severity?.toLowerCase() || 'info';
+  const config = severityConfig[severity] || severityConfig.info;
+
   return (
-    <AccordionItem value={`${finding.file}-${finding.line}`} className="border-white/10">
-      <AccordionTrigger className="hover:no-underline py-2">
-        <div className="flex items-center gap-3 text-left">
-          <SeverityBadge severity={finding.severity} />
-          <div className="flex-1">
-            <span className="text-sm text-white">{finding.name}</span>
-            {finding.fixed && (
-              <span className="ml-2 text-xs text-green-400 flex items-center gap-1 inline-flex">
-                <CheckCircle className="w-3 h-3" /> Fixed
-              </span>
+    <div className={`rounded-lg border ${config.border} ${config.bg} overflow-hidden`}>
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full p-3 flex items-start gap-3 text-left hover:bg-white/5 transition-colors"
+      >
+        <span className={config.color}>
+          {config.icon}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`text-xs px-1.5 py-0.5 rounded ${config.bg} ${config.color}`}>
+              {config.label}
+            </span>
+            <span className="text-xs text-gray-500 truncate">
+              {finding.file || finding.location || 'General'}
+            </span>
+          </div>
+          <p className="text-sm text-white font-medium line-clamp-2">
+            {finding.title || finding.message || finding.description}
+          </p>
+        </div>
+        <span className="text-gray-500">
+          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        </span>
+      </button>
+
+      {isExpanded && (
+        <div className="px-3 pb-3 pt-0 border-t border-white/5">
+          <div className="mt-3 space-y-3">
+            {finding.description && (
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Description</p>
+                <p className="text-sm text-gray-300">{finding.description}</p>
+              </div>
+            )}
+            {finding.recommendation && (
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Recommendation</p>
+                <p className="text-sm text-gray-300">{finding.recommendation}</p>
+              </div>
+            )}
+            {finding.code && (
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Affected Code</p>
+                <pre className="text-xs bg-black/40 p-2 rounded overflow-x-auto text-gray-400 font-mono">
+                  {finding.code}
+                </pre>
+              </div>
+            )}
+            {finding.cwe && (
+              <a
+                href={`https://cwe.mitre.org/data/definitions/${finding.cwe}.html`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300"
+              >
+                CWE-{finding.cwe}
+                <ExternalLink className="w-3 h-3" />
+              </a>
             )}
           </div>
         </div>
-      </AccordionTrigger>
-      <AccordionContent>
-        <div className="space-y-2 text-sm">
-          <p className="text-gray-400">{finding.description}</p>
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span>📁 {finding.file}</span>
-            <span>Line {finding.line}</span>
-          </div>
-          {finding.line_content && (
-            <pre className="bg-black/40 p-2 rounded text-xs text-gray-400 overflow-x-auto">
-              {finding.line_content}
-            </pre>
-          )}
-          {finding.fix_suggestion && (
-            <p className="text-cyan-400 text-xs">
-              💡 {finding.fix_suggestion}
-            </p>
-          )}
-        </div>
-      </AccordionContent>
-    </AccordionItem>
+      )}
+    </div>
   );
-};
+}
 
-export function SecurityFindings({ findings = [], className }) {
-  if (!findings.length) {
-    return null;
+export function SecurityFindings({ findings }) {
+  if (!findings || findings.length === 0) {
+    return (
+      <div className="p-6 text-center">
+        <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-3">
+          <Shield className="w-6 h-6 text-green-400" />
+        </div>
+        <p className="text-white font-medium mb-1">No Security Issues Found</p>
+        <p className="text-sm text-gray-500">Your project passed the security scan</p>
+      </div>
+    );
   }
 
-  const highCount = findings.filter((f) => f.severity === "high").length;
-  const mediumCount = findings.filter((f) => f.severity === "medium").length;
-  const lowCount = findings.filter((f) => f.severity === "low").length;
-  const fixedCount = findings.filter((f) => f.fixed).length;
+  // Group by severity
+  const grouped = findings.reduce((acc, finding) => {
+    const severity = finding.severity?.toLowerCase() || 'info';
+    if (!acc[severity]) acc[severity] = [];
+    acc[severity].push(finding);
+    return acc;
+  }, {});
+
+  const severityOrder = ['high', 'medium', 'low', 'info', 'fixed'];
+  const sortedSeverities = severityOrder.filter(s => grouped[s]);
 
   return (
-    <div className={cn("rounded-lg border border-white/10 bg-black/40", className)} data-testid="security-findings">
-      <div className="flex items-center justify-between p-4 border-b border-white/10">
-        <div className="flex items-center gap-2">
-          <Shield className="w-5 h-5 text-cyan-400" />
-          <span className="font-medium text-white">Security Findings</span>
-        </div>
-        <div className="flex items-center gap-2 text-xs">
-          {highCount > 0 && (
-            <span className="text-red-400">{highCount} high</span>
-          )}
-          {mediumCount > 0 && (
-            <span className="text-yellow-400">{mediumCount} medium</span>
-          )}
-          {lowCount > 0 && (
-            <span className="text-blue-400">{lowCount} low</span>
-          )}
-          {fixedCount > 0 && (
-            <span className="text-green-400">({fixedCount} fixed)</span>
-          )}
-        </div>
+    <div className="p-4 space-y-3">
+      {/* Summary */}
+      <div className="flex items-center gap-4 pb-3 border-b border-white/5">
+        {sortedSeverities.map(severity => {
+          const config = severityConfig[severity];
+          return (
+            <div key={severity} className="flex items-center gap-1.5">
+              <span className={config.color}>{config.icon}</span>
+              <span className="text-sm text-gray-400">
+                {grouped[severity].length} {config.label}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
-      <Accordion type="multiple" className="px-4">
-        {findings.map((finding, index) => (
-          <FindingItem key={index} finding={finding} />
-        ))}
-      </Accordion>
+      {/* Findings list */}
+      <div className="space-y-2">
+        {sortedSeverities.flatMap(severity =>
+          grouped[severity].map((finding, index) => (
+            <FindingItem key={`${severity}-${index}`} finding={finding} />
+          ))
+        )}
+      </div>
     </div>
   );
 }

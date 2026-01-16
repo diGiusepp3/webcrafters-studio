@@ -1,167 +1,93 @@
-// frontend/src/components/AgentTimeline.jsx
-import { useMemo } from "react";
-import {
-  Clock,
-  Search,
-  MessageCircle,
-  Code,
-  Wrench,
-  CheckCircle,
-  Shield,
-  Package,
-  Upload,
-  Camera,
-  Play,
-  Hammer,
-  Save,
-  Check,
-  AlertCircle,
-  Loader2,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import { CheckCircle2, XCircle, Loader2, Clock, Lightbulb, Code2, Shield, Package, GitBranch, Bot } from 'lucide-react';
 
-// Icon mapping
-const STEP_ICONS = {
-  clock: Clock,
-  search: Search,
-  "message-circle": MessageCircle,
-  code: Code,
-  wrench: Wrench,
-  "check-circle": CheckCircle,
-  shield: Shield,
-  package: Package,
-  upload: Upload,
-  camera: Camera,
-  play: Play,
-  tool: Hammer,
-  save: Save,
-  check: Check,
-  "alert-circle": AlertCircle,
-  loader: Loader2,
+const stepIcons = {
+  preflight: <Lightbulb className="w-4 h-4" />,
+  clarifying: <Bot className="w-4 h-4" />,
+  generating: <Code2 className="w-4 h-4" />,
+  patching: <GitBranch className="w-4 h-4" />,
+  validating: <CheckCircle2 className="w-4 h-4" />,
+  security_check: <Shield className="w-4 h-4" />,
+  fixing: <GitBranch className="w-4 h-4" />,
+  saving: <Package className="w-4 h-4" />,
+  done: <CheckCircle2 className="w-4 h-4" />,
+  error: <XCircle className="w-4 h-4" />,
 };
 
-const StepIcon = ({ icon, status, className }) => {
-  const IconComponent = STEP_ICONS[icon] || Loader2;
-  
-  if (status === "running") {
-    return <Loader2 className={cn("animate-spin", className)} />;
-  }
-  
-  return <IconComponent className={className} />;
-};
+function formatDuration(ms) {
+  if (!ms) return '';
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
 
-const TimelineStep = ({ step, isLast }) => {
-  const status = step.status || "pending";
-  
-  const statusColors = {
-    pending: "border-gray-600 bg-gray-800 text-gray-500",
-    running: "border-cyan-500 bg-cyan-500/20 text-cyan-400 ring-2 ring-cyan-500/30",
-    success: "border-green-500 bg-green-500/20 text-green-400",
-    error: "border-red-500 bg-red-500/20 text-red-400",
-    skipped: "border-gray-600 bg-gray-800 text-gray-600",
-  };
-  
-  const lineColors = {
-    pending: "bg-gray-700",
-    running: "bg-gradient-to-b from-cyan-500 to-gray-700",
-    success: "bg-green-500",
-    error: "bg-red-500",
-    skipped: "bg-gray-700",
-  };
-
-  return (
-    <div className="flex gap-3" data-testid={`timeline-step-${step.step}`}>
-      {/* Icon and line */}
-      <div className="flex flex-col items-center">
-        <div
-          className={cn(
-            "w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-300",
-            statusColors[status]
-          )}
-        >
-          <StepIcon icon={step.icon} status={status} className="w-4 h-4" />
-        </div>
-        {!isLast && (
-          <div
-            className={cn(
-              "w-0.5 flex-1 min-h-[24px] transition-all duration-300",
-              lineColors[status]
-            )}
-          />
-        )}
-      </div>
-      
-      {/* Content */}
-      <div className="pb-4 flex-1">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "font-medium text-sm",
-              status === "running" && "text-cyan-400",
-              status === "success" && "text-green-400",
-              status === "error" && "text-red-400",
-              status === "pending" && "text-gray-500",
-              status === "skipped" && "text-gray-600"
-            )}
-          >
-            {step.title}
-          </span>
-          {step.duration_ms && (
-            <span className="text-xs text-gray-500">
-              {(step.duration_ms / 1000).toFixed(1)}s
-            </span>
-          )}
-        </div>
-        <p className="text-xs text-gray-500 mt-0.5">{step.description}</p>
-        {step.error && (
-          <p className="text-xs text-red-400 mt-1">{step.error}</p>
-        )}
-      </div>
-    </div>
-  );
-};
-
-export function AgentTimeline({ timeline = [], className }) {
-  // Sort timeline by expected order
-  const sortedTimeline = useMemo(() => {
-    const order = [
-      "queued", "preflight", "clarifying", "generating", "patching",
-      "validating", "security_check", "building", "deploying",
-      "screenshotting", "testing", "fixing", "saving", "done", "error"
-    ];
-    
-    return [...timeline].sort((a, b) => {
-      const indexA = order.indexOf(a.step);
-      const indexB = order.indexOf(b.step);
-      return indexA - indexB;
-    });
-  }, [timeline]);
-
-  if (!timeline.length) {
+export function AgentTimeline({ steps }) {
+  if (!steps || steps.length === 0) {
     return (
-      <div className={cn("flex flex-col items-center justify-center py-8 text-gray-500", className)}>
-        <Loader2 className="w-6 h-6 animate-spin mb-2" />
-        <span className="text-sm">Waiting to start...</span>
+      <div className="text-center py-6 text-gray-500 text-sm">
+        Waiting for agent to start...
       </div>
     );
   }
 
   return (
-    <div className={cn("p-4", className)} data-testid="agent-timeline">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
-        <span className="text-sm font-medium text-gray-300">Agent Timeline</span>
-      </div>
-      
-      <div className="space-y-0">
-        {sortedTimeline.map((step, index) => (
-          <TimelineStep
-            key={step.step}
-            step={step}
-            isLast={index === sortedTimeline.length - 1}
-          />
-        ))}
-      </div>
+    <div className="space-y-1">
+      {steps.map((step, index) => {
+        const isRunning = step.status === 'running';
+        const isSuccess = step.status === 'success';
+        const isError = step.status === 'error';
+        const icon = stepIcons[step.step] || <Clock className="w-4 h-4" />;
+
+        return (
+          <div
+            key={step.step || index}
+            className={`flex items-center gap-3 p-2.5 rounded-lg transition-all ${
+              isRunning ? 'bg-cyan-500/10 border border-cyan-500/30' :
+              isSuccess ? 'bg-green-500/5' :
+              isError ? 'bg-red-500/5' :
+              'bg-white/5'
+            }`}
+          >
+            {/* Icon */}
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+              isRunning ? 'bg-cyan-500/20 text-cyan-400' :
+              isSuccess ? 'bg-green-500/20 text-green-400' :
+              isError ? 'bg-red-500/20 text-red-400' :
+              'bg-white/10 text-gray-500'
+            }`}>
+              {isRunning ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isSuccess ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : isError ? (
+                <XCircle className="w-4 h-4" />
+              ) : (
+                icon
+              )}
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm font-medium ${
+                isRunning ? 'text-cyan-400' :
+                isSuccess ? 'text-green-400' :
+                isError ? 'text-red-400' :
+                'text-gray-400'
+              }`}>
+                {step.title || step.step}
+              </p>
+              {step.description && (
+                <p className="text-xs text-gray-500 truncate">{step.description}</p>
+              )}
+            </div>
+
+            {/* Duration */}
+            {step.duration_ms && (
+              <span className="text-xs text-gray-500 flex-shrink-0">
+                {formatDuration(step.duration_ms)}
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

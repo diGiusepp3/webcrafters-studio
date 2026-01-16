@@ -1,142 +1,162 @@
-import { useState } from 'react';
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import {
+  Folder, FolderOpen, FileCode, FileJson, FileText,
+  File, ChevronRight, ChevronDown, Image, Settings, Database
+} from 'lucide-react';
+
+const getFileIcon = (filename) => {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  const iconMap = {
+    js: <FileCode className="w-4 h-4 text-yellow-400" />,
+    jsx: <FileCode className="w-4 h-4 text-cyan-400" />,
+    ts: <FileCode className="w-4 h-4 text-blue-400" />,
+    tsx: <FileCode className="w-4 h-4 text-blue-400" />,
+    py: <FileCode className="w-4 h-4 text-green-400" />,
+    json: <FileJson className="w-4 h-4 text-yellow-500" />,
+    html: <FileCode className="w-4 h-4 text-orange-400" />,
+    css: <FileCode className="w-4 h-4 text-blue-500" />,
+    md: <FileText className="w-4 h-4 text-gray-400" />,
+    txt: <FileText className="w-4 h-4 text-gray-400" />,
+    png: <Image className="w-4 h-4 text-pink-400" />,
+    jpg: <Image className="w-4 h-4 text-pink-400" />,
+    jpeg: <Image className="w-4 h-4 text-pink-400" />,
+    svg: <Image className="w-4 h-4 text-pink-400" />,
+    env: <Settings className="w-4 h-4 text-gray-500" />,
+    sql: <Database className="w-4 h-4 text-blue-400" />,
+  };
+  return iconMap[ext] || <File className="w-4 h-4 text-gray-400" />;
+};
 
 // Build tree structure from flat file list
 const buildTree = (files) => {
-  const root = { name: 'root', children: {}, isFolder: true };
+  const root = { name: '', children: {}, files: [] };
 
   files.forEach((file) => {
     const parts = file.path.split('/');
     let current = root;
 
-    parts.forEach((part, index) => {
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
       if (!current.children[part]) {
-        current.children[part] = {
-          name: part,
-          children: {},
-          isFolder: index < parts.length - 1,
-          file: index === parts.length - 1 ? file : null,
-        };
+        current.children[part] = { name: part, children: {}, files: [] };
       }
       current = current.children[part];
+    }
+
+    current.files.push({
+      ...file,
+      name: parts[parts.length - 1],
     });
   });
 
   return root;
 };
 
-const getFileIcon = (filename) => {
-  const ext = filename.split('.').pop().toLowerCase();
-  const iconColors = {
-    js: 'text-yellow-400',
-    jsx: 'text-cyan-400',
-    ts: 'text-blue-400',
-    tsx: 'text-blue-400',
-    py: 'text-green-400',
-    json: 'text-yellow-500',
-    html: 'text-orange-400',
-    css: 'text-blue-500',
-    md: 'text-gray-400',
-    txt: 'text-gray-400',
-  };
-  return iconColors[ext] || 'text-gray-400';
-};
+// Tree Node Component
+function TreeNode({ node, level = 0, onSelect, selectedPath, expandedFolders, toggleFolder }) {
+  const sortedChildren = Object.values(node.children).sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+  const sortedFiles = [...node.files].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
 
-const TreeNode = ({ node, depth = 0, onSelect, selectedPath }) => {
-  const [isOpen, setIsOpen] = useState(depth < 2);
+  return (
+    <>
+      {/* Folders */}
+      {sortedChildren.map((child) => {
+        const folderPath = `${node.name ? node.name + '/' : ''}${child.name}`;
+        const isExpanded = expandedFolders.has(folderPath);
 
-  const children = Object.values(node.children || {});
-  const hasChildren = children.length > 0;
-
-  if (node.name === 'root') {
-    return (
-        <div className="text-sm font-mono">
-          {children.map((child) => (
+        return (
+          <div key={child.name}>
+            <button
+              onClick={() => toggleFolder(folderPath)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-white/5 transition-colors text-left"
+              style={{ paddingLeft: `${level * 12 + 12}px` }}
+            >
+              <span className="text-gray-500">
+                {isExpanded ? (
+                  <ChevronDown className="w-3 h-3" />
+                ) : (
+                  <ChevronRight className="w-3 h-3" />
+                )}
+              </span>
+              {isExpanded ? (
+                <FolderOpen className="w-4 h-4 text-cyan-400" />
+              ) : (
+                <Folder className="w-4 h-4 text-cyan-400" />
+              )}
+              <span className="text-sm text-gray-300 truncate">{child.name}</span>
+            </button>
+            {isExpanded && (
               <TreeNode
-                  key={child.name}
-                  node={child}
-                  depth={0}
-                  onSelect={onSelect}
-                  selectedPath={selectedPath}
+                node={child}
+                level={level + 1}
+                onSelect={onSelect}
+                selectedPath={selectedPath}
+                expandedFolders={expandedFolders}
+                toggleFolder={toggleFolder}
               />
-          ))}
-        </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Files */}
+      {sortedFiles.map((file) => (
+        <button
+          key={file.path}
+          onClick={() => onSelect(file)}
+          className={`w-full flex items-center gap-2 px-3 py-1.5 transition-colors text-left ${
+            selectedPath === file.path
+              ? 'bg-cyan-500/20 text-cyan-400 border-l-2 border-cyan-500'
+              : 'hover:bg-white/5 text-gray-400 hover:text-white'
+          }`}
+          style={{ paddingLeft: `${level * 12 + 28}px` }}
+        >
+          {getFileIcon(file.name)}
+          <span className="text-sm truncate">{file.name}</span>
+        </button>
+      ))}
+    </>
+  );
+}
+
+export function FileTree({ files, onSelect, selectedPath }) {
+  const [expandedFolders, setExpandedFolders] = useState(new Set(['', 'src', 'app', 'components']));
+
+  const tree = useMemo(() => buildTree(files || []), [files]);
+
+  const toggleFolder = (path) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
+
+  if (!files || files.length === 0) {
+    return (
+      <div className="p-4 text-center text-gray-500 text-sm">
+        No files generated yet
+      </div>
     );
   }
 
-  const isSelected = node.file && node.file.path === selectedPath;
-
   return (
-      <div>
-        <div
-            className={`flex items-center gap-1 py-1 px-2 cursor-pointer rounded transition-colors
-          ${isSelected ? 'bg-cyan-500/20 text-cyan-400' : 'hover:bg-white/5 text-gray-300'}
-          ${node.isFolder ? 'font-medium' : ''}
-        `}
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
-            onClick={() => {
-              if (node.isFolder) {
-                setIsOpen(!isOpen);
-              } else if (node.file) {
-                onSelect(node.file);
-              }
-            }}
-        >
-          {node.isFolder ? (
-              <>
-                {hasChildren ? (
-                    isOpen ? (
-                        <ChevronDown className="w-4 h-4 text-gray-500" />
-                    ) : (
-                        <ChevronRight className="w-4 h-4 text-gray-500" />
-                    )
-                ) : (
-                    <span className="w-4" />
-                )}
-                {isOpen ? (
-                    <FolderOpen className="w-4 h-4 text-cyan-400" />
-                ) : (
-                    <Folder className="w-4 h-4 text-cyan-400" />
-                )}
-              </>
-          ) : (
-              <>
-                <span className="w-4" />
-                <File className={`w-4 h-4 ${getFileIcon(node.name)}`} />
-              </>
-          )}
-          <span className="ml-1 truncate">{node.name}</span>
-        </div>
-
-        {node.isFolder && isOpen && hasChildren && (
-            <div>
-              {children
-                  .sort((a, b) => {
-                    if (a.isFolder && !b.isFolder) return -1;
-                    if (!a.isFolder && b.isFolder) return 1;
-                    return a.name.localeCompare(b.name);
-                  })
-                  .map((child) => (
-                      <TreeNode
-                          key={child.name}
-                          node={child}
-                          depth={depth + 1}
-                          onSelect={onSelect}
-                          selectedPath={selectedPath}
-                      />
-                  ))}
-            </div>
-        )}
-      </div>
+    <div className="py-2">
+      <TreeNode
+        node={tree}
+        onSelect={onSelect}
+        selectedPath={selectedPath}
+        expandedFolders={expandedFolders}
+        toggleFolder={toggleFolder}
+      />
+    </div>
   );
-};
-
-export const FileTree = ({ files = [], onSelect, selectedPath }) => {
-  const tree = buildTree(files);
-
-  return (
-      <div className="h-full overflow-auto py-2">
-        <TreeNode node={tree} onSelect={onSelect} selectedPath={selectedPath} />
-      </div>
-  );
-};
+}

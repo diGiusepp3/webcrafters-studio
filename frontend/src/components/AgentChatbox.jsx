@@ -1,91 +1,107 @@
-// frontend/src/components/AgentChatbox.jsx
-import { useRef, useEffect } from "react";
-import { Bot, AlertCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { useRef, useEffect } from 'react';
+import { Bot, User, Send, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
-const ChatMessage = ({ message }) => {
-  const isError = message.metadata?.error;
-  const timestamp = message.timestamp
-    ? new Date(message.timestamp).toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "";
-
+function ChatMessage({ message, isUser }) {
   return (
-    <div
-      className={cn(
-        "flex gap-3 p-3 rounded-lg",
-        isError ? "bg-red-500/10" : "bg-white/5"
-      )}
-      data-testid="chat-message"
-    >
-      <div
-        className={cn(
-          "w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0",
-          isError ? "bg-red-500/20" : "bg-cyan-500/20"
-        )}
-      >
-        {isError ? (
-          <AlertCircle className="w-4 h-4 text-red-400" />
-        ) : (
-          <Bot className="w-4 h-4 text-cyan-400" />
-        )}
+    <div className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : ''}`}>
+      <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+        isUser 
+          ? 'bg-violet-500/20 text-violet-400' 
+          : 'bg-cyan-500/20 text-cyan-400'
+      }`}>
+        {isUser ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className={cn("text-xs font-medium", isError ? "text-red-400" : "text-cyan-400")}>
-            Agent
-          </span>
-          {timestamp && (
-            <span className="text-xs text-gray-600">{timestamp}</span>
-          )}
+      <div className={`flex-1 max-w-[85%] ${
+        isUser ? 'text-right' : 'text-left'
+      }`}>
+        <div className={`inline-block p-2.5 rounded-xl text-sm ${
+          isUser 
+            ? 'bg-violet-500/10 border border-violet-500/20 text-white' 
+            : 'bg-white/5 border border-white/10 text-gray-300'
+        }`}>
+          <p className="whitespace-pre-wrap break-words">{message.message || message.content}</p>
         </div>
-        <p className={cn("text-sm break-words", isError ? "text-red-300" : "text-gray-300")}>
-          {message.message}
-        </p>
+        {message.timestamp && (
+          <p className="text-[10px] text-gray-600 mt-1">
+            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </p>
+        )}
       </div>
     </div>
   );
-};
+}
 
-export function AgentChatbox({ messages = [], className }) {
-  const scrollRef = useRef(null);
-  const bottomRef = useRef(null);
+export function AgentChatbox({ 
+  messages, 
+  inputValue, 
+  onInputChange, 
+  onSend, 
+  isLoading, 
+  className = '' 
+}) {
+  const messagesEndRef = useRef(null);
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: "smooth" });
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  if (!messages.length) {
-    return (
-      <div className={cn("flex flex-col items-center justify-center py-8 text-gray-500", className)}>
-        <Bot className="w-6 h-6 mb-2 opacity-50" />
-        <span className="text-sm">Agent will narrate progress here...</span>
-      </div>
-    );
-  }
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      onSend?.();
+    }
+  };
 
   return (
-    <div className={cn("flex flex-col h-full", className)} data-testid="agent-chatbox">
-      <div className="flex items-center gap-2 p-3 border-b border-white/5">
-        <Bot className="w-4 h-4 text-cyan-400" />
-        <span className="text-sm font-medium text-gray-300">Agent Chat</span>
-        <span className="text-xs text-gray-500 ml-auto">{messages.length} messages</span>
+    <div className={`flex flex-col ${className}`}>
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {messages.length === 0 ? (
+          <div className="text-center text-gray-500 text-sm py-4">
+            <Bot className="w-6 h-6 mx-auto mb-2 opacity-50" />
+            <p>No messages yet</p>
+          </div>
+        ) : (
+          messages.map((msg, index) => (
+            <ChatMessage
+              key={index}
+              message={msg}
+              isUser={msg.metadata?.role === 'user'}
+            />
+          ))
+        )}
+        <div ref={messagesEndRef} />
       </div>
-      
-      <ScrollArea className="flex-1 p-3" ref={scrollRef}>
-        <div className="space-y-2">
-          {messages.map((msg, index) => (
-            <ChatMessage key={index} message={msg} />
-          ))}
-          <div ref={bottomRef} />
+
+      {/* Input */}
+      {onInputChange && (
+        <div className="p-2 border-t border-white/5">
+          <div className="flex gap-2">
+            <Input
+              value={inputValue}
+              onChange={(e) => onInputChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask the AI agent..."
+              className="flex-1 bg-black/40 border-white/10 text-white placeholder:text-gray-500 text-sm"
+              disabled={isLoading}
+            />
+            <Button
+              onClick={onSend}
+              disabled={isLoading || !inputValue?.trim()}
+              size="icon"
+              className="bg-cyan-500 hover:bg-cyan-600 text-black"
+            >
+              {isLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+            </Button>
+          </div>
         </div>
-      </ScrollArea>
+      )}
     </div>
   );
 }
