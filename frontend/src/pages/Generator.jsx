@@ -116,7 +116,7 @@ export default function Generator() {
     setSessionId(newSessionId);
 
     const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
-    const wsUrl = backendUrl.replace(/^http/, 'ws') + `/ws/agent/${newSessionId}`;
+    const wsUrl = backendUrl.replace(/^http/, 'ws') + `/api/ws/agent/${newSessionId}`;
 
     try {
       const ws = new WebSocket(wsUrl);
