@@ -25,18 +25,19 @@ async def preview_project(
             select(Project).where(
                 Project.id == project_id,
                 Project.user_id == user["id"],
-                )
+            )
         )
     ).scalar_one_or_none()
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Check project_type field (not type)
-    if project.project_type not in ["web", "frontend", "fullstack"]:
+    # Supported project types for preview (including 'any')
+    supported_types = ["web", "frontend", "fullstack", "any"]
+    if project.project_type and project.project_type not in supported_types:
         raise HTTPException(
             status_code=400,
-            detail="This project type doesn't support preview",
+            detail=f"Project type '{project.project_type}' doesn't support preview. Supported: {supported_types}",
         )
 
     # Files ophalen
