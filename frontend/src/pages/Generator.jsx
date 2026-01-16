@@ -1,47 +1,97 @@
 // frontend/src/pages/Generator.jsx
-// Complete Generator: Create + Edit projects with live coding experience
+// Complete AI Agent Generator with live coding, clarify, security checks
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import api from "@/api";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Navbar } from "@/components/Navbar";
 import { AgentTimeline } from "@/components/AgentTimeline";
 import { AgentChatbox } from "@/components/AgentChatbox";
 import { SecurityFindings } from "@/components/SecurityFindings";
 import { FileTree } from "@/components/FileTree";
-
-// New modular components
-import {
-  LiveCodeEditor,
-  ProjectTypeSelector,
-  ClarifyDialog,
-  PreviewSidebar,
-} from "@/components/generator";
+import { LiveCodeEditor } from "@/components/generator/LiveCodeEditor";
+import { ProjectTypeSelector } from "@/components/generator/ProjectTypeSelector";
+import { ClarifyDialog } from "@/components/generator/ClarifyDialog";
+import { PreviewSidebar } from "@/components/generator/PreviewSidebar";
+import { PromptSuggestions } from "@/components/generator/PromptSuggestions";
+import { TemplateSelector } from "@/components/generator/TemplateSelector";
 
 import {
-  Sparkles,
-  Loader2,
-  Wand2,
-  AlertCircle,
-  Bot,
-  ChevronRight,
-  Download,
-  FileCode,
-  Calendar,
-  Folder,
-  ChevronLeft,
-  Eye,
-  Play,
-  Code2,
+  Sparkles, Loader2, Wand2, AlertCircle, Bot, ChevronRight,
+  Download, FileCode, Calendar, Folder, ChevronLeft, Eye, Play,
+  Code2, Shield, CheckCircle2, XCircle, Clock, Zap, RefreshCw,
+  Copy, ExternalLink, Settings2, Lightbulb, ArrowRight, Terminal,
+  Cpu, GitBranch, Layers, Package
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-// ==========================================
-// MAIN GENERATOR COMPONENT
-// ==========================================
+// Progress Step Component
+function ProgressStep({ step, isActive, isComplete, isError }) {
+  return (
+    <div className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
+      isActive ? 'bg-cyan-500/10 border border-cyan-500/30' :
+      isComplete ? 'bg-green-500/5 border border-green-500/20' :
+      isError ? 'bg-red-500/5 border border-red-500/20' :
+      'bg-white/5 border border-white/5'
+    }`}>
+      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+        isActive ? 'bg-cyan-500/20 text-cyan-400' :
+        isComplete ? 'bg-green-500/20 text-green-400' :
+        isError ? 'bg-red-500/20 text-red-400' :
+        'bg-white/10 text-gray-500'
+      }`}>
+        {isComplete ? <CheckCircle2 className="w-4 h-4" /> :
+         isError ? <XCircle className="w-4 h-4" /> :
+         isActive ? <Loader2 className="w-4 h-4 animate-spin" /> :
+         step.icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium ${
+          isActive ? 'text-cyan-400' :
+          isComplete ? 'text-green-400' :
+          isError ? 'text-red-400' :
+          'text-gray-400'
+        }`}>
+          {step.title}
+        </p>
+        {step.duration && (
+          <p className="text-xs text-gray-500">{step.duration}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Chat Message Component
+function ChatMessage({ message, isUser }) {
+  return (
+    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
+      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+        isUser ? 'bg-violet-500/20 text-violet-400' : 'bg-cyan-500/20 text-cyan-400'
+      }`}>
+        {isUser ? 'U' : <Bot className="w-4 h-4" />}
+      </div>
+      <div className={`flex-1 max-w-[80%] p-3 rounded-xl ${
+        isUser 
+          ? 'bg-violet-500/10 border border-violet-500/20 text-white' 
+          : 'bg-white/5 border border-white/10 text-gray-300'
+      }`}>
+        <p className="text-sm whitespace-pre-wrap">{message.message || message.content}</p>
+        {message.timestamp && (
+          <p className="text-xs text-gray-500 mt-1">
+            {new Date(message.timestamp).toLocaleTimeString()}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Generator() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -58,6 +108,7 @@ export default function Generator() {
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState(0);
 
   // Edit mode
   const [project, setProject] = useState(null);
@@ -78,36 +129,57 @@ export default function Generator() {
   const [chatMessages, setChatMessages] = useState([]);
   const [securityFindings, setSecurityFindings] = useState([]);
   const [currentJobId, setCurrentJobId] = useState(null);
-  const [sessionId, setSessionId] = useState(null);
 
   // Clarify
   const [clarifyJobId, setClarifyJobId] = useState(null);
   const [clarifyQuestions, setClarifyQuestions] = useState([]);
   const [clarifyAnswers, setClarifyAnswers] = useState({});
 
+  // Templates
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+
   // Live coding
   const [isTyping, setIsTyping] = useState(false);
   const [currentTypingFile, setCurrentTypingFile] = useState(null);
+  const [generatedFiles, setGeneratedFiles] = useState([]);
 
-  // Refs
+  // UI
+  const [activeTab, setActiveTab] = useState('chat');
+  const chatEndRef = useRef(null);
   const pollRef = useRef(null);
   const wsRef = useRef(null);
+
+  // Progress steps for create mode
+  const progressSteps = useMemo(() => [
+    { id: 'preflight', title: 'Analyzing Prompt', icon: <Lightbulb className="w-4 h-4" /> },
+    { id: 'clarifying', title: 'Clarifying Requirements', icon: <Bot className="w-4 h-4" /> },
+    { id: 'generating', title: 'Generating Code', icon: <Code2 className="w-4 h-4" /> },
+    { id: 'patching', title: 'Patching Files', icon: <GitBranch className="w-4 h-4" /> },
+    { id: 'validating', title: 'Validating Output', icon: <CheckCircle2 className="w-4 h-4" /> },
+    { id: 'security_check', title: 'Security Scan', icon: <Shield className="w-4 h-4" /> },
+    { id: 'saving', title: 'Saving Project', icon: <Package className="w-4 h-4" /> },
+  ], []);
+
+  // Scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
 
   // ==========================================
   // EDIT MODE: Load existing project
   // ==========================================
   const fetchProject = useCallback(async () => {
     if (!projectId) return;
-
     setProjectLoading(true);
     setError("");
     try {
       const response = await api.get(`/projects/${projectId}`);
       setProject(response.data);
+      setGeneratedFiles(response.data.files || []);
       if (response.data.files?.length) {
         setSelectedFile(response.data.files[0]);
       }
-      // Set project type from loaded project
       if (response.data.project_type) {
         setProjectType(response.data.project_type);
       }
@@ -124,132 +196,6 @@ export default function Generator() {
       fetchProject();
     }
   }, [isEditMode, fetchProject]);
-
-  // ==========================================
-  // WEBSOCKET: AI Agent connection
-  // ==========================================
-  useEffect(() => {
-    if (!isEditMode || !project) return;
-
-    const newSessionId = `project-${projectId}-${Date.now()}`;
-    setSessionId(newSessionId);
-
-    const backendUrl = process.env.REACT_APP_BACKEND_URL || "";
-    const wsUrl = backendUrl.replace(/^http/, "ws") + `/api/ws/agent/${newSessionId}`;
-
-    try {
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        console.log("WebSocket connected");
-        setWsConnected(true);
-        setChatMessages([
-          {
-            message: "👋 AI Agent connected! Ask me to modify your project.",
-            timestamp: new Date().toISOString(),
-          },
-        ]);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          // Handle different message types
-          switch (data.type) {
-            case "message":
-            case "assistant_message":
-              setChatMessages((prev) => [
-                ...prev,
-                {
-                  message: data.content || data.message,
-                  timestamp: new Date().toISOString(),
-                },
-              ]);
-              break;
-
-            case "timeline_update":
-              if (data.timeline) setTimeline(data.timeline);
-              break;
-
-            case "security_findings":
-              if (data.findings) setSecurityFindings(data.findings);
-              break;
-
-            case "file_update":
-              // Live coding: show typing effect
-              if (data.file) {
-                setIsTyping(true);
-                setCurrentTypingFile(data.file);
-                
-                // Update project files
-                setProject((prev) => {
-                  const files = [...(prev?.files || [])];
-                  const existingIndex = files.findIndex(f => f.path === data.file.path);
-                  
-                  if (existingIndex >= 0) {
-                    files[existingIndex] = {
-                      ...files[existingIndex],
-                      content: data.file.content,
-                    };
-                  } else {
-                    files.push(data.file);
-                  }
-                  
-                  return { ...prev, files };
-                });
-
-                // Select the updated file
-                setSelectedFile(data.file);
-                
-                // Stop typing after a delay
-                setTimeout(() => setIsTyping(false), 2000);
-              }
-              break;
-
-            case "files_updated":
-              if (data.files) {
-                setProject((prev) => ({
-                  ...prev,
-                  files: data.files.map((f) => ({
-                    path: f.path,
-                    content: f.content,
-                    language: detectLanguage(f.path),
-                  })),
-                }));
-              }
-              break;
-
-            case "status_update":
-              setAgentLoading(
-                data.status === "thinking" || data.status === "generating"
-              );
-              break;
-
-            case "preview_ready":
-              if (data.url) {
-                setPreviewUrl(data.url);
-                setPreviewOpen(true);
-              }
-              break;
-          }
-        } catch (err) {
-          console.error("WebSocket message parse error:", err);
-        }
-      };
-
-      ws.onerror = () => setWsConnected(false);
-      ws.onclose = () => setWsConnected(false);
-
-      return () => {
-        if (ws.readyState === WebSocket.OPEN) ws.close();
-      };
-    } catch (err) {
-      console.error("WebSocket connection error:", err);
-      setWsConnected(false);
-    }
-  }, [isEditMode, project, projectId]);
 
   // Cleanup
   useEffect(() => {
@@ -268,6 +214,7 @@ export default function Generator() {
       js: "javascript", jsx: "javascript", ts: "typescript", tsx: "typescript",
       py: "python", html: "html", css: "css", json: "json", md: "markdown",
       php: "php", rb: "ruby", go: "go", rs: "rust", java: "java",
+      kt: "kotlin", swift: "swift", c: "c", cpp: "cpp", cs: "csharp",
     };
     return langMap[ext] || "text";
   };
@@ -277,6 +224,12 @@ export default function Generator() {
       month: "short", day: "numeric", year: "numeric",
       hour: "2-digit", minute: "2-digit",
     });
+
+  const formatDuration = (ms) => {
+    if (!ms) return '';
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
 
   // ==========================================
   // CREATE MODE: Generation
@@ -290,10 +243,13 @@ export default function Generator() {
     setChatMessages([]);
     setSecurityFindings([]);
     setPreviewUrl(null);
+    setProgress(0);
+    setGeneratedFiles([]);
   };
 
   const startPolling = (jobId) => {
     setCurrentJobId(jobId);
+    let lastStep = '';
 
     pollRef.current = setInterval(async () => {
       try {
@@ -302,12 +258,25 @@ export default function Generator() {
           status, step, project_id, questions, error: jobError,
           timeline: jobTimeline, chat_messages: jobChatMessages,
           security_findings: jobSecurityFindings, message, preview_url,
+          applied_fixes,
         } = res.data;
 
-        if (jobTimeline) setTimeline(jobTimeline);
+        // Update timeline
+        if (jobTimeline) {
+          setTimeline(jobTimeline);
+          // Calculate progress
+          const completedSteps = jobTimeline.filter(t => t.status === 'success').length;
+          setProgress((completedSteps / progressSteps.length) * 100);
+        }
         if (jobChatMessages) setChatMessages(jobChatMessages);
         if (jobSecurityFindings) setSecurityFindings(jobSecurityFindings);
         if (preview_url) setPreviewUrl(preview_url);
+
+        // Handle step changes for live feedback
+        if (step !== lastStep) {
+          lastStep = step;
+          setStatusText(message || `${step}...`);
+        }
 
         // Handle clarification
         if (status === "clarify") {
@@ -320,11 +289,12 @@ export default function Generator() {
         }
 
         if (status === "queued" || status === "running") {
-          setStatusText(message || "Working…");
+          setStatusText(message || "Working...");
         }
 
         if (status === "done") {
           clearInterval(pollRef.current);
+          setProgress(100);
           // Navigate to edit mode with new project
           navigate(`/generate?projectId=${project_id}`);
         }
@@ -348,12 +318,20 @@ export default function Generator() {
     if (!prompt.trim()) return;
 
     resetState();
-    setStatusText("Starting...");
+    setStatusText("Starting AI Agent...");
     setLoading(true);
+
+    // Add initial chat message
+    setChatMessages([{
+      message: `🚀 Starting generation for: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`,
+      timestamp: new Date().toISOString(),
+    }]);
 
     try {
       const res = await api.post("/generate", {
-        prompt,
+        prompt: selectedTemplate 
+          ? `${selectedTemplate.prompt}\n\nAdditional requirements: ${prompt}`
+          : prompt,
         project_type: projectType,
       });
       startPolling(res.data.job_id);
@@ -365,7 +343,7 @@ export default function Generator() {
 
   const submitClarify = async () => {
     setLoading(true);
-    setStatusText("Resuming…");
+    setStatusText("Resuming with your answers...");
 
     try {
       await api.post(`/generate/continue/${clarifyJobId}`, clarifyAnswers);
@@ -379,39 +357,17 @@ export default function Generator() {
     }
   };
 
+  // Template selection
+  const handleTemplateSelect = (template) => {
+    setSelectedTemplate(template);
+    setProjectType(template.type);
+    setPrompt(template.prompt);
+    setShowTemplates(false);
+  };
+
   // ==========================================
   // EDIT MODE: Actions
   // ==========================================
-  const sendAgentMessage = () => {
-    if (!agentMessage.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    setAgentLoading(true);
-    setChatMessages((prev) => [
-      ...prev,
-      {
-        message: agentMessage,
-        timestamp: new Date().toISOString(),
-        metadata: { role: "user" },
-      },
-    ]);
-
-    wsRef.current.send(
-      JSON.stringify({
-        type: "message",
-        content: agentMessage,
-        context: {
-          project_id: projectId,
-          project_type: project?.project_type || projectType,
-          current_files: project?.files || [],
-        },
-      })
-    );
-
-    setAgentMessage("");
-  };
-
   const handleDownload = async () => {
     if (!project) return;
     setDownloading(true);
@@ -421,7 +377,6 @@ export default function Generator() {
       const response = await api.get(`/projects/${projectId}/download`, {
         responseType: "blob",
       });
-
       const blob = new Blob([response.data], { type: "application/zip" });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -440,7 +395,6 @@ export default function Generator() {
 
   const handlePreview = async () => {
     if (!project) return;
-
     setPreviewLoading(true);
     setError("");
 
@@ -449,7 +403,6 @@ export default function Generator() {
       const backendUrl = process.env.REACT_APP_BACKEND_URL || "";
       const url = res.data.url;
       const fullUrl = url.startsWith("http") ? url : `${backendUrl}${url}`;
-
       setPreviewUrl(fullUrl);
       setPreviewOpen(true);
     } catch (err) {
@@ -457,6 +410,11 @@ export default function Generator() {
     } finally {
       setPreviewLoading(false);
     }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    // Could add toast notification here
   };
 
   // ==========================================
@@ -467,7 +425,10 @@ export default function Generator() {
       <div className="min-h-screen bg-[#030712]">
         <Navbar />
         <div className="flex items-center justify-center h-[calc(100vh-64px)]">
-          <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+          <div className="text-center">
+            <Loader2 className="w-10 h-10 text-cyan-400 animate-spin mx-auto mb-4" />
+            <p className="text-gray-400">Loading project...</p>
+          </div>
         </div>
       </div>
     );
@@ -480,19 +441,16 @@ export default function Generator() {
     return (
       <div className="min-h-screen bg-[#030712]">
         <Navbar />
-        <div className="max-w-4xl mx-auto px-6 py-12">
-          <div className="flex items-center gap-2 p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
-            <AlertCircle className="w-5 h-5" />
-            {error}
+        <div className="max-w-4xl mx-auto px-6 pt-24">
+          <div className="glass-card p-8 rounded-xl text-center">
+            <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-white mb-2">Error Loading Project</h2>
+            <p className="text-gray-400 mb-6">{error}</p>
+            <Button onClick={() => navigate("/dashboard")} variant="outline" className="glass-card border-white/10">
+              <ChevronLeft className="w-4 h-4 mr-2" />
+              Back to Dashboard
+            </Button>
           </div>
-          <Button
-            onClick={() => navigate("/dashboard")}
-            variant="ghost"
-            className="mt-4 text-gray-400 hover:text-white"
-          >
-            <ChevronLeft className="w-4 h-4 mr-2" />
-            Back to Dashboard
-          </Button>
         </div>
       </div>
     );
@@ -507,8 +465,8 @@ export default function Generator() {
         <Navbar />
 
         {/* Header */}
-        <div className="border-b border-white/5 bg-black/40">
-          <div className="max-w-screen-2xl mx-auto px-6 py-3">
+        <div className="border-b border-white/5 bg-[#0a0f1a]/80 backdrop-blur-xl pt-16">
+          <div className="max-w-screen-2xl mx-auto px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <button
@@ -519,20 +477,32 @@ export default function Generator() {
                   <ChevronLeft className="w-5 h-5" />
                 </button>
                 <div>
-                  <h1 className="text-lg font-bold text-white">{project.name}</h1>
-                  <div className="flex items-center gap-3 text-xs text-gray-500">
-                    <span className="flex items-center gap-1">
-                      <Code2 className="w-3 h-3" />
-                      {project.project_type || "fullstack"}
+                  <h1 className="text-lg font-bold text-white flex items-center gap-2">
+                    {project.name}
+                    <span className={`text-xs px-2 py-0.5 rounded-full bg-gradient-to-r ${
+                      project.project_type === 'fullstack' ? 'from-violet-500/20 to-purple-500/20 text-violet-400' :
+                      project.project_type === 'frontend' ? 'from-cyan-500/20 to-blue-500/20 text-cyan-400' :
+                      project.project_type === 'backend' ? 'from-green-500/20 to-emerald-500/20 text-green-400' :
+                      'from-gray-500/20 to-slate-500/20 text-gray-400'
+                    }`}>
+                      {project.project_type}
                     </span>
+                  </h1>
+                  <div className="flex items-center gap-4 text-xs text-gray-500">
                     <span className="flex items-center gap-1">
-                      <FileCode className="w-3 h-3" />
+                      <FileCode className="w-3.5 h-3.5" />
                       {project.files?.length || 0} files
                     </span>
                     <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {project.created_at && formatDate(project.created_at)}
+                      <Calendar className="w-3.5 h-3.5" />
+                      {formatDate(project.created_at)}
                     </span>
+                    {securityFindings.length > 0 && (
+                      <span className="flex items-center gap-1 text-yellow-500">
+                        <Shield className="w-3.5 h-3.5" />
+                        {securityFindings.length} findings
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -543,7 +513,7 @@ export default function Generator() {
                   size="sm"
                   onClick={handlePreview}
                   disabled={previewLoading}
-                  className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+                  className="glass-card border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
                   data-testid="preview-button"
                 >
                   {previewLoading ? (
@@ -559,6 +529,7 @@ export default function Generator() {
                   size="sm"
                   onClick={handleDownload}
                   disabled={downloading}
+                  className="glass-card border-white/10 text-white hover:bg-white/5"
                   data-testid="download-button"
                 >
                   {downloading ? (
@@ -575,12 +546,10 @@ export default function Generator() {
 
         {/* Error banner */}
         {error && (
-          <div className="px-6 py-2">
-            <div className="max-w-screen-2xl mx-auto">
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                <AlertCircle className="w-4 h-4" />
-                {error}
-              </div>
+          <div className="px-6 py-2 bg-red-500/10 border-b border-red-500/20">
+            <div className="max-w-screen-2xl mx-auto flex items-center gap-2 text-red-400 text-sm">
+              <AlertCircle className="w-4 h-4" />
+              {error}
             </div>
           </div>
         )}
@@ -590,56 +559,128 @@ export default function Generator() {
           {/* Left: Files + Code */}
           <div className="flex-1 flex overflow-hidden">
             {/* File tree */}
-            <div className="w-56 border-r border-white/5 bg-[#0f172a] flex-shrink-0 overflow-y-auto">
-              <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2">
-                <Folder className="w-4 h-4 text-cyan-400" />
-                <span className="text-xs font-medium text-gray-300">Files</span>
+            <div className="w-60 border-r border-white/5 bg-[#0a0f1a] flex-shrink-0 overflow-hidden flex flex-col">
+              <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+                <span className="flex items-center gap-2 text-sm font-medium text-white">
+                  <Folder className="w-4 h-4 text-cyan-400" />
+                  Files
+                </span>
+                <span className="text-xs text-gray-500">
+                  {project.files?.length || 0}
+                </span>
               </div>
-              <FileTree
-                files={project.files || []}
-                onSelect={setSelectedFile}
-                selectedPath={selectedFile?.path}
-              />
+              <div className="flex-1 overflow-y-auto">
+                <FileTree
+                  files={project.files || []}
+                  onSelect={setSelectedFile}
+                  selectedPath={selectedFile?.path}
+                />
+              </div>
             </div>
 
             {/* Code editor */}
             <div className="flex-1 flex flex-col overflow-hidden">
-              <LiveCodeEditor
-                file={selectedFile}
-                isTyping={isTyping && currentTypingFile?.path === selectedFile?.path}
-                className="flex-1"
-                maxHeight="calc(100vh - 200px)"
-              />
-
-              {/* AI Chat (bottom) */}
-              <div className="h-48 border-t border-white/5 bg-[#0a0a0f]">
-                <div className="px-4 py-2 border-b border-white/5 flex items-center gap-2">
-                  <Bot className="w-4 h-4 text-cyan-400" />
-                  <span className="text-xs font-medium text-gray-300">AI Agent</span>
-                  {wsConnected && (
-                    <span className="w-2 h-2 rounded-full bg-green-500" title="Connected" />
-                  )}
+              {selectedFile ? (
+                <>
+                  {/* File header */}
+                  <div className="px-4 py-2 border-b border-white/5 bg-black/40 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileCode className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm text-white font-mono">{selectedFile.path}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => copyToClipboard(selectedFile.content)}
+                        className="h-7 px-2 text-gray-400 hover:text-white"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                  {/* Code */}
+                  <div className="flex-1 overflow-auto">
+                    <LiveCodeEditor
+                      file={selectedFile}
+                      isTyping={isTyping && currentTypingFile?.path === selectedFile?.path}
+                      className="h-full"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-gray-500">
+                  <div className="text-center">
+                    <FileCode className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>Select a file to view</p>
+                  </div>
                 </div>
-                <AgentChatbox
-                  messages={chatMessages}
-                  inputValue={agentMessage}
-                  onInputChange={setAgentMessage}
-                  onSend={sendAgentMessage}
-                  isLoading={agentLoading}
-                  className="h-[calc(100%-40px)]"
-                />
-              </div>
+              )}
             </div>
           </div>
 
-          {/* Right: Preview sidebar */}
-          <PreviewSidebar
-            previewUrl={previewUrl}
-            isOpen={previewOpen}
-            onToggle={() => setPreviewOpen(!previewOpen)}
-            isLoading={previewLoading}
-            projectType={project.project_type}
-          />
+          {/* Right sidebar */}
+          <div className="w-80 border-l border-white/5 bg-[#0a0f1a] flex-shrink-0 flex flex-col overflow-hidden">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
+              <TabsList className="grid grid-cols-3 m-2 bg-black/40">
+                <TabsTrigger value="chat" className="text-xs">Chat</TabsTrigger>
+                <TabsTrigger value="security" className="text-xs">Security</TabsTrigger>
+                <TabsTrigger value="info" className="text-xs">Info</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="chat" className="flex-1 flex flex-col overflow-hidden mt-0 px-2 pb-2">
+                <div className="flex-1 overflow-y-auto space-y-3 p-2">
+                  {chatMessages.length === 0 ? (
+                    <div className="text-center text-gray-500 py-8">
+                      <Bot className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No messages yet</p>
+                    </div>
+                  ) : (
+                    chatMessages.map((msg, i) => (
+                      <ChatMessage
+                        key={i}
+                        message={msg}
+                        isUser={msg.metadata?.role === 'user'}
+                      />
+                    ))
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="security" className="flex-1 overflow-y-auto mt-0 px-2 pb-2">
+                <SecurityFindings findings={securityFindings} />
+              </TabsContent>
+
+              <TabsContent value="info" className="flex-1 overflow-y-auto mt-0 p-4">
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs text-gray-500 uppercase tracking-wider">Project Name</label>
+                    <p className="text-white font-medium">{project.name}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 uppercase tracking-wider">Description</label>
+                    <p className="text-gray-300 text-sm">{project.description || 'No description'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 uppercase tracking-wider">Original Prompt</label>
+                    <p className="text-gray-300 text-sm bg-black/40 p-3 rounded-lg mt-1">{project.prompt}</p>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          {/* Preview sidebar */}
+          {previewOpen && (
+            <PreviewSidebar
+              previewUrl={previewUrl}
+              isOpen={previewOpen}
+              onToggle={() => setPreviewOpen(!previewOpen)}
+              isLoading={previewLoading}
+              projectType={project.project_type}
+            />
+          )}
         </div>
       </div>
     );
@@ -652,146 +693,251 @@ export default function Generator() {
     <div className="min-h-screen bg-[#030712]">
       <Navbar />
 
-      <div className="max-w-6xl mx-auto px-6 py-8">
+      <div className="max-w-6xl mx-auto px-6 pt-24 pb-12">
         {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2 flex items-center justify-center gap-3">
-            <Sparkles className="w-8 h-8 text-cyan-400" />
-            Generate New Project
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-card mb-6">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+            </span>
+            <span className="text-sm text-cyan-400 font-medium">AI Agent Ready</span>
+          </div>
+          <h1 className="font-heading text-4xl font-bold text-white mb-3">
+            What would you like to build?
           </h1>
-          <p className="text-gray-400">
-            Describe what you want to build and let AI create it for you
+          <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+            Describe your project and our AI agent will plan, code, test, and deliver it for you
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left: Input form */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Project type */}
-            <Card className="bg-black/40 border-white/10">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-white text-sm font-medium">
-                  Project Type
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ProjectTypeSelector
-                  selected={projectType}
-                  onSelect={setProjectType}
-                  disabled={loading}
-                />
-              </CardContent>
-            </Card>
-
-            {/* Prompt input */}
-            <Card className="bg-black/40 border-white/10">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-white text-sm font-medium">
-                  Describe Your Project
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="E.g., Build a task management app with user authentication, project boards, and real-time collaboration..."
-                  className="min-h-[150px] bg-black/40 border-white/10 text-white placeholder:text-gray-500"
-                  disabled={loading}
-                  data-testid="prompt-input"
-                />
-
-                {/* Error */}
-                {error && (
-                  <div className="mt-4 flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                    <span>{error}</span>
+            {/* Template selection */}
+            {showTemplates ? (
+              <TemplateSelector
+                onSelect={handleTemplateSelect}
+                onClose={() => setShowTemplates(false)}
+              />
+            ) : (
+              <>
+                {/* Selected template badge */}
+                {selectedTemplate && (
+                  <div className="glass-card p-4 rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center text-white">
+                        {selectedTemplate.icon}
+                      </div>
+                      <div>
+                        <p className="text-white font-medium">{selectedTemplate.name}</p>
+                        <p className="text-gray-500 text-sm">Template selected</p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedTemplate(null);
+                        setPrompt('');
+                      }}
+                      className="text-gray-400 hover:text-white"
+                    >
+                      Clear
+                    </Button>
                   </div>
                 )}
 
-                {/* Clarification questions */}
-                {clarifyQuestions.length > 0 && (
-                  <div className="mt-4">
-                    <ClarifyDialog
-                      questions={clarifyQuestions}
-                      answers={clarifyAnswers}
-                      onAnswerChange={(key, value) =>
-                        setClarifyAnswers((prev) => ({ ...prev, [key]: value }))
-                      }
-                      onSubmit={submitClarify}
-                      isSubmitting={loading}
-                    />
+                {/* Project type */}
+                <div className="glass-card p-6 rounded-xl">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-heading font-bold text-white flex items-center gap-2">
+                      <Layers className="w-5 h-5 text-cyan-400" />
+                      Project Type
+                    </h3>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowTemplates(true)}
+                      className="text-cyan-400 hover:text-cyan-300"
+                    >
+                      <Sparkles className="w-4 h-4 mr-1" />
+                      Use Template
+                    </Button>
                   </div>
-                )}
+                  <ProjectTypeSelector
+                    selected={projectType}
+                    onSelect={setProjectType}
+                    disabled={loading}
+                  />
+                </div>
 
-                {/* Generate button */}
-                {clarifyQuestions.length === 0 && (
-                  <Button
-                    onClick={handleGenerate}
-                    disabled={loading || !prompt.trim()}
-                    className="w-full mt-4 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
-                    data-testid="generate-button"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        {statusText || "Generating..."}
-                      </>
-                    ) : (
-                      <>
-                        <Wand2 className="w-4 h-4 mr-2" />
-                        Generate Project
-                      </>
-                    )}
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
+                {/* Prompt input */}
+                <div className="glass-card p-6 rounded-xl">
+                  <h3 className="font-heading font-bold text-white flex items-center gap-2 mb-4">
+                    <Terminal className="w-5 h-5 text-cyan-400" />
+                    Describe Your Project
+                  </h3>
+                  
+                  {/* Prompt suggestions */}
+                  {!prompt && <PromptSuggestions onSelect={setPrompt} projectType={projectType} />}
+
+                  <Textarea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="E.g., Build a SaaS dashboard with user authentication, subscription billing, analytics charts, and a settings page. Use React, Tailwind, and FastAPI..."
+                    className="min-h-[180px] bg-black/40 border-white/10 text-white placeholder:text-gray-500 resize-none text-base"
+                    disabled={loading}
+                    data-testid="prompt-input"
+                  />
+
+                  {/* Error */}
+                  {error && (
+                    <div className="mt-4 flex items-start gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
+                      <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-medium">Generation Failed</p>
+                        <p className="text-sm opacity-80 mt-1">{error}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Clarification questions */}
+                  {clarifyQuestions.length > 0 && (
+                    <div className="mt-6">
+                      <ClarifyDialog
+                        questions={clarifyQuestions}
+                        answers={clarifyAnswers}
+                        onAnswerChange={(key, value) =>
+                          setClarifyAnswers((prev) => ({ ...prev, [key]: value }))
+                        }
+                        onSubmit={submitClarify}
+                        isSubmitting={loading}
+                      />
+                    </div>
+                  )}
+
+                  {/* Generate button */}
+                  {clarifyQuestions.length === 0 && (
+                    <Button
+                      onClick={handleGenerate}
+                      disabled={loading || !prompt.trim()}
+                      className="w-full mt-6 btn-primary py-6 text-lg"
+                      data-testid="generate-button"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                          {statusText || "Processing..."}
+                        </>
+                      ) : (
+                        <>
+                          <Wand2 className="w-5 h-5 mr-2" />
+                          Generate Project
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Right: Progress */}
+          {/* Right: Progress & Status */}
           <div className="space-y-6">
-            {/* Timeline */}
-            {timeline.length > 0 && (
-              <Card className="bg-black/40 border-white/10">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-white text-sm font-medium flex items-center gap-2">
-                    <Play className="w-4 h-4 text-cyan-400" />
-                    Progress
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <AgentTimeline steps={timeline} />
-                </CardContent>
-              </Card>
+            {/* Progress */}
+            {loading && (
+              <div className="glass-card p-6 rounded-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-heading font-bold text-white flex items-center gap-2">
+                    <Cpu className="w-5 h-5 text-cyan-400 animate-pulse" />
+                    AI Agent Working
+                  </h3>
+                  <span className="text-sm text-cyan-400">{Math.round(progress)}%</span>
+                </div>
+                <Progress value={progress} className="h-2 mb-6" />
+                
+                <div className="space-y-2">
+                  {progressSteps.map((step, index) => {
+                    const timelineStep = timeline.find(t => t.step === step.id);
+                    const isActive = timelineStep?.status === 'running';
+                    const isComplete = timelineStep?.status === 'success';
+                    const isError = timelineStep?.status === 'error';
+                    
+                    return (
+                      <ProgressStep
+                        key={step.id}
+                        step={{
+                          ...step,
+                          duration: timelineStep?.duration_ms ? formatDuration(timelineStep.duration_ms) : undefined
+                        }}
+                        isActive={isActive}
+                        isComplete={isComplete}
+                        isError={isError}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
             {/* Chat messages */}
             {chatMessages.length > 0 && (
-              <Card className="bg-black/40 border-white/10">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-white text-sm font-medium flex items-center gap-2">
-                    <Bot className="w-4 h-4 text-cyan-400" />
-                    AI Messages
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="max-h-[300px] overflow-y-auto">
-                  <div className="space-y-2">
-                    {chatMessages.map((msg, i) => (
-                      <div
-                        key={i}
-                        className="text-sm text-gray-300 p-2 rounded bg-white/5"
-                      >
-                        {msg.message}
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="glass-card rounded-xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
+                  <Bot className="w-4 h-4 text-cyan-400" />
+                  <span className="text-sm font-medium text-white">Agent Log</span>
+                </div>
+                <div className="max-h-[400px] overflow-y-auto p-4 space-y-3">
+                  {chatMessages.map((msg, i) => (
+                    <div key={i} className="text-sm text-gray-300 p-3 rounded-lg bg-black/40">
+                      {msg.message}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
 
             {/* Security findings */}
             {securityFindings.length > 0 && (
-              <SecurityFindings findings={securityFindings} />
+              <div className="glass-card rounded-xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-yellow-400" />
+                  <span className="text-sm font-medium text-white">Security Findings</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400">
+                    {securityFindings.length}
+                  </span>
+                </div>
+                <SecurityFindings findings={securityFindings} />
+              </div>
+            )}
+
+            {/* Tips */}
+            {!loading && (
+              <div className="glass-card p-6 rounded-xl">
+                <h3 className="font-heading font-bold text-white flex items-center gap-2 mb-4">
+                  <Lightbulb className="w-5 h-5 text-yellow-400" />
+                  Tips for Better Results
+                </h3>
+                <ul className="space-y-3 text-sm text-gray-400">
+                  <li className="flex items-start gap-2">
+                    <ChevronRight className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
+                    Be specific about features and functionality
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <ChevronRight className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
+                    Mention preferred tech stack if you have one
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <ChevronRight className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
+                    Include authentication requirements
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <ChevronRight className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
+                    Describe the UI/UX you envision
+                  </li>
+                </ul>
+              </div>
             )}
           </div>
         </div>
