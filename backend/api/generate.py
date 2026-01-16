@@ -389,12 +389,17 @@ async def _generation_worker(job_id: str, user: dict):
             
             result = await generate_code_with_ai(prompt, effective_pt, effective_prefs)
             files = result.get("files", []) or []
+            
+            # Store files for live updates
+            job["files"] = files
+            
             mark_step_complete(job_id, "generating", True, {"file_count": len(files)})
             add_chat_message(job_id, f"✨ Generated {len(files)} files!")
 
             # Stage 3: Patch files
             set_status(job_id, "running", "patching", "Patching files…")
             files = patch_generated_project(files, effective_prefs)
+            job["files"] = files  # Update with patched files
             mark_step_complete(job_id, "patching", True)
 
             # Stage 4: Validate
