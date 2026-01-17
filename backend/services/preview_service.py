@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -49,6 +50,7 @@ def _serve_dir(preview_dir: Path) -> Path:
 
 
 def _write_json(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
@@ -59,14 +61,23 @@ def _read_json(path: Path) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _write_status(preview_dir: Path, status: str, detected_type: str, error: Optional[str] = None, serve_root: Optional[str] = None) -> None:
-    _write_json(_status_path(preview_dir), {
-        "status": status,               # queued | building | ready | failed
-        "detected_type": detected_type, # react | node | python | php | static
-        "error": error,
-        "serve_root": serve_root,       # ".serve" when built, else None
-        "updated_at": int(time.time()),
-    })
+def _write_status(
+        preview_dir: Path,
+        status: str,
+        detected_type: str,
+        error: Optional[str] = None,
+        serve_root: Optional[str] = None,
+) -> None:
+    _write_json(
+        _status_path(preview_dir),
+        {
+            "status": status,  # queued | building | ready | failed
+            "detected_type": detected_type,  # react | node | python | php | static
+            "error": error,
+            "serve_root": serve_root,  # ".serve" when built, else None
+            "updated_at": int(time.time()),
+        },
+    )
 
 
 def read_status(preview_id: str) -> Dict[str, Any]:
@@ -151,7 +162,11 @@ def create_static_index(preview_dir: Path, files: List[Dict[str, Any]]) -> None:
         return
 
     file_list = "\n".join(
-        [f'<li><a href="{(f.get("path") or "").lstrip("/")}">{f.get("path")}</a></li>' for f in files if f.get("path")]
+        [
+            f'<li><a href="{(f.get("path") or "").lstrip("/")}">{f.get("path")}</a></li>'
+            for f in files
+            if f.get("path")
+        ]
     )
 
     html = f"""<!DOCTYPE html>
@@ -220,7 +235,12 @@ def _pick_package_manager(preview_dir: Path) -> str:
     return "npm"
 
 
-def _run_stream(preview_dir: Path, cmd: List[str], timeout: int, env: Optional[Dict[str, str]] = None) -> int:
+def _run_stream(
+        preview_dir: Path,
+        cmd: List[str],
+        timeout: int,
+        env: Optional[Dict[str, str]] = None,
+) -> int:
     _append_log(preview_dir, f"$ {' '.join(cmd)}")
     start = time.time()
     try:
@@ -306,7 +326,6 @@ def _build_react(preview_dir: Path) -> Tuple[bool, str, Dict[str, Any]]:
 
     # publish
     if not out_dir_name:
-        # last resort guess
         out_dir_name = "dist" if (preview_dir / "dist").exists() else ("build" if (preview_dir / "build").exists() else "")
 
     ok, msg = _publish_output(preview_dir, out_dir_name) if out_dir_name else (False, "Unknown build output directory")
@@ -321,7 +340,7 @@ def _build_react(preview_dir: Path) -> Tuple[bool, str, Dict[str, Any]]:
 # ----------------------------
 # Background job
 # ----------------------------
-def _run_preview_job(preview_id: str, detected_type: str) -> None:
+def _run_preview_job(preview_id: str, detected_type: str, original_files: List[Dict[str, Any]]) -> None:
     preview_dir = PREVIEW_ROOT / preview_id
     try:
         _write_status(preview_dir, "building", detected_type)
@@ -344,13 +363,13 @@ def _run_preview_job(preview_id: str, detected_type: str) -> None:
         # Non-react: just make sure root index exists (static listing / helper page)
         if detected_type == "php":
             if not (preview_dir / "index.php").exists() and not (preview_dir / "index.html").exists():
-                create_static_index(preview_dir, [])
+                create_static_index(preview_dir, original_files)
         elif detected_type in ("python", "node"):
             if not (preview_dir / "index.html").exists():
-                create_static_index(preview_dir, [])
+                create_static_index(preview_dir, original_files)
         else:
             if not (preview_dir / "index.html").exists():
-                create_static_index(preview_dir, [])
+                create_static_index(preview_dir, original_files)
 
         _write_json(preview_dir / META_FILE, {"status": "ready", "agent_events": [], "output_dir": None})
         _write_status(preview_dir, "ready", detected_type, error=None, serve_root=None)
@@ -360,6 +379,9 @@ def _run_preview_job(preview_id: str, detected_type: str) -> None:
         _write_status(preview_dir, "failed", detected_type, error=str(e), serve_root=None)
 
 
+# ----------------------------
+# Public API used by FastAPI layer
+# ----------------------------
 def start_preview_job(project_id: str, files: List[Dict[str, Any]], project_type: Optional[str] = None) -> Dict[str, Any]:
     """
     Creates preview folder, writes files, starts background job.
@@ -369,15 +391,18 @@ def start_preview_job(project_id: str, files: List[Dict[str, Any]], project_type
     preview_dir = PREVIEW_ROOT / preview_id
     preview_dir.mkdir(parents=True, exist_ok=True)
 
-    # reset files
-    if _log_path(preview_dir).exists():
-        _log_path(preview_dir).unlink()
+    # reset old logs for safety
+    lp = _log_path(preview_dir)
+    if lp.exists():
+        lp.unlink()
 
     detected_type = (project_type or detect_project_type(files) or "static").lower().strip()
+
     write_files(preview_dir, files)
     _write_status(preview_dir, "queued", detected_type)
+    _append_log(preview_dir, f"queued preview (project_id={project_id})")
 
-    t = threading.Thread(target=_run_preview_job, args=(preview_id, detected_type), daemon=True)
+    t = threading.Thread(target=_run_preview_job, args=(preview_id, detected_type, files), daemon=True)
     t.start()
 
     return {
