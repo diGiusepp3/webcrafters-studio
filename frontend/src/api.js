@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 // Use environment variable for backend URL, fallback to direct port in development
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const api = axios.create({
     baseURL: `${BACKEND_URL}/api`,
@@ -10,7 +10,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-    const token = localStorage.getItem("token");
+    const token = localStorage.getItem("access_token");
     config.headers = config.headers ?? {};
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
@@ -20,7 +20,9 @@ api.interceptors.response.use(
     (r) => r,
     (err) => {
         // Als je token verlopen/ongeldig is: voorkom eindeloze "not authenticated" loops
-        if (err?.response?.status === 401) localStorage.removeItem("token");
+        if (err?.response?.status === 401 || err?.response?.status === 403) {
+            localStorage.removeItem("access_token");
+        }
         return Promise.reject(err);
     }
 );

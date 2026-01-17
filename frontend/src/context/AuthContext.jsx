@@ -1,3 +1,4 @@
+// frontend/src/context/AuthContext.jsx
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "../api";
 
@@ -5,55 +6,43 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(() => localStorage.getItem("token"));
+  const [token, setToken] = useState(() => localStorage.getItem("access_token"));
   const [loading, setLoading] = useState(true);
 
-  // Sync token with localStorage (api interceptor handles headers)
   useEffect(() => {
-    if (token) {
-      localStorage.setItem("token", token);
-    } else {
-      localStorage.removeItem("token");
-    }
+    if (token) localStorage.setItem("access_token", token);
+    else localStorage.removeItem("access_token");
   }, [token]);
 
-  // Check auth on app start
   useEffect(() => {
     const checkAuth = async () => {
       if (!token) {
         setLoading(false);
         return;
       }
-
       try {
         const res = await api.get("/auth/me");
         setUser(res.data);
-      } catch (err) {
-        console.warn("Auth check failed, logging out");
+      } catch {
         setToken(null);
         setUser(null);
       } finally {
         setLoading(false);
       }
     };
-
     checkAuth();
   }, [token]);
 
   const login = async (email, password) => {
     const res = await api.post("/auth/login", { email, password });
-    setToken(res.data.token);
+    setToken(res.data.access_token); // <-- FIX
     setUser(res.data.user);
     return res.data;
   };
 
   const register = async (name, email, password) => {
-    const res = await api.post("/auth/register", {
-      name,
-      email,
-      password,
-    });
-    setToken(res.data.token);
+    const res = await api.post("/auth/register", { name, email, password });
+    setToken(res.data.access_token); // <-- FIX
     setUser(res.data.user);
     return res.data;
   };
@@ -65,15 +54,7 @@ export const AuthProvider = ({ children }) => {
 
   return (
       <AuthContext.Provider
-          value={{
-            user,
-            token,
-            loading,
-            login,
-            register,
-            logout,
-            isAuthenticated: !!user,
-          }}
+          value={{ user, token, loading, login, register, logout, isAuthenticated: !!user }}
       >
         {children}
       </AuthContext.Provider>
@@ -82,8 +63,6 @@ export const AuthProvider = ({ children }) => {
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
+  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
   return ctx;
 };
