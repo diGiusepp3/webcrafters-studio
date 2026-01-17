@@ -59,7 +59,10 @@ async def preview_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    files = (await db.execute(select(ProjectFile).where(ProjectFile.project_id == project_id))).scalars().all()
+    files = (
+        await db.execute(select(ProjectFile).where(ProjectFile.project_id == project_id))
+    ).scalars().all()
+
     if not files:
         raise HTTPException(status_code=400, detail="No files to preview")
 
@@ -93,7 +96,7 @@ async def preview_status(preview_id: str):
 async def preview_logs(preview_id: str):
     if not (PREVIEW_ROOT / preview_id).exists():
         raise HTTPException(status_code=404, detail="Preview not found")
-    return PlainTextResponse(tail_logs(preview_id), media_type="text/plain")
+    return PlainTextResponse(tail_logs(preview_id), media_type="text/plain; charset=utf-8")
 
 
 @router.get("/preview/{preview_id}")
@@ -109,9 +112,9 @@ async def serve_preview_file(preview_id: str, file_path: str = ""):
     if not file_path:
         file_path = "index.html"
 
-    target_file = (serve_root / file_path)
+    target_file = serve_root / file_path
 
-    # path traversal guard
+    # Path traversal guard
     try:
         target_file = target_file.resolve()
         serve_root_resolved = serve_root.resolve()
@@ -124,7 +127,7 @@ async def serve_preview_file(preview_id: str, file_path: str = ""):
 
     if target_file.is_dir():
         for index in ("index.html", "index.htm"):
-            idx = (target_file / index)
+            idx = target_file / index
             if idx.exists():
                 target_file = idx.resolve()
                 break
