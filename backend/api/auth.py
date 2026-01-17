@@ -1,3 +1,4 @@
+# FILE: backend/api/auth.py
 import uuid
 from datetime import datetime, timezone
 
@@ -31,7 +32,7 @@ async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     return TokenResponse(
-        token=create_token(user_id),
+        token=create_token(user_id, data.email),  # ✅ changed
         user=UserResponse(
             id=user_id,
             email=data.email,
@@ -47,7 +48,7 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     return TokenResponse(
-        token=create_token(user.id),
+        token=create_token(user.id, user.email),  # ✅ changed
         user=UserResponse(
             id=user.id,
             email=user.email,

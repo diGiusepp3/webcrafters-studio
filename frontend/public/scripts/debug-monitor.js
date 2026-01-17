@@ -566,11 +566,6 @@
             return;
         }
 
-        // Exclude specific non-editable elements by ID
-        if (element.id === "emergent-badge") {
-            return;
-        }
-
         // Exclude Toast and Sonner components from selection
         const componentName = element.getAttribute("x-component");
         if (
@@ -770,9 +765,7 @@
         }
 
         // Exclude specific non-editable elements by ID
-        if (element.id === "emergent-badge") {
-            return;
-        }
+
 
         // Exclude Toast and Sonner components from hover
         const componentName = element.getAttribute("x-component");

@@ -24,6 +24,8 @@ from backend.api.projects_preview import router as preview_router
 from backend.api.credits import router as credits_router
 from backend.api.agent_ws import router as agent_router
 from backend.api.modify import router as modify_router
+from backend.api.code_assistant import router as code_assistant_router  # ✅ ADD
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("webcrafters-studio")
@@ -46,7 +48,6 @@ async def shutdown():
     await engine.dispose()
     logger.info("Shutdown complete: DB engine disposed.")
 
-# ✅ Routers zónder extra prefix (want routers hebben zelf al prefix="/api")
 app.include_router(auth_router)
 app.include_router(generate_router)
 app.include_router(projects_router)
@@ -55,6 +56,7 @@ app.include_router(preview_router)
 app.include_router(credits_router)
 app.include_router(agent_router)
 app.include_router(modify_router)
+app.include_router(code_assistant_router)
 
 # Static preview serving (blijft root-level /preview)
 PREVIEW_ROOT = PathLib(os.environ.get("PREVIEW_ROOT", "/tmp/previews"))

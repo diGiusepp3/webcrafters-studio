@@ -1,4 +1,4 @@
-// Agent Timeline Panel - Shows real-time progress like Emergent.sh
+// Agent Timeline Panel - Shows real-time progress like Studio.webcrafters.be
 import { CheckCircle2, XCircle, Loader2, Clock } from 'lucide-react';
 
 export function AgentTimelinePanel({ steps, progressSteps }) {
