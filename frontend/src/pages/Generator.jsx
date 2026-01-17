@@ -121,6 +121,7 @@ export default function Generator() {
   const [activeTab, setActiveTab] = useState('chat');
   const chatEndRef = useRef(null);
   const pollRef = useRef(null);
+  const previewPollRef = useRef(null);
 
   // Progress steps
   const progressSteps = useMemo(() => [
@@ -216,6 +217,25 @@ export default function Generator() {
       timestamp: new Date().toISOString(),
       metadata: { role, status }
     }]);
+  };
+
+
+  const upsertAgentLog = (key, text) => {
+    setChatMessages((prev) => {
+      const idx = prev.findIndex((m) => m?.metadata?.key === key);
+
+      const msg = {
+        message: text,
+        timestamp: new Date().toISOString(),
+        metadata: { role: "agent", status: "thinking", key, kind: "cli" },
+      };
+
+      if (idx === -1) return [...prev, msg];
+
+      const next = [...prev];
+      next[idx] = msg;
+      return next;
+    });
   };
 
   const startPolling = (jobId) => {
@@ -530,24 +550,136 @@ export default function Generator() {
     }
   };
 
+
   const handlePreview = async () => {
-    if (!project) return;
+    if (!projectId) return;
+
+    // UI: open Agent tab + show loading
+    setActiveTab("chat");
     setPreviewLoading(true);
     setError("");
 
+    addChatMessage("🧪 Preview: trying to build (testing agent)…", "agent");
+    upsertAgentLog("preview-log", "```bash\nstarting preview...\n```");
+
+    // cleanup old poll
+    if (previewPollRef.current) clearInterval(previewPollRef.current);
+
     try {
+      // Start preview (backend currently returns { url, ... } in your codebase)
       const res = await api.post(`/projects/${projectId}/preview`);
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || "";
-      const url = res.data.url;
-      const fullUrl = url.startsWith("http") ? url : `${backendUrl}${url}`;
-      setPreviewUrl(fullUrl);
-      setPreviewOpen(true);
-    } catch (err) {
-      setError(err?.response?.data?.detail || "Failed to start preview");
-    } finally {
+      const { url, status_url, log_url } = res.data || {};
+
+      const fullUrl =
+          url?.startsWith("http") ? url : url ? `${window.location.origin}${url}` : null;
+
+      if (!fullUrl) {
+        setPreviewLoading(false);
+        addChatMessage("❌ Preview start failed: backend returned no url", "agent", "error");
+        return;
+      }
+
+      // If backend has no testing-agent endpoints yet -> just open preview
+      if (!status_url || !log_url) {
+        upsertAgentLog("preview-log", "```bash\nno build agent endpoints; opening preview...\n```");
+        setPreviewUrl(fullUrl);
+        setPreviewOpen(true);
+        setPreviewLoading(false);
+        addChatMessage("✅ Preview gestart.", "agent", "success");
+        return;
+      }
+
+      let lastLog = "";
+      let fixAttempted = false;
+
+      // poll logs + status (CLI-like tail)
+      previewPollRef.current = setInterval(async () => {
+        try {
+          const statusPath = status_url.replace(/^\/api/, "");
+          const logPath = log_url.replace(/^\/api/, "");
+
+          const [st, lg] = await Promise.all([
+            api.get(statusPath),
+            api.get(logPath, { responseType: "text" }),
+          ]);
+
+          const status = st.data?.status;
+          const err = st.data?.error || null;
+          const serveRoot = st.data?.serve_root || null;
+
+          const logText = (typeof lg.data === "string" ? lg.data : "") || "";
+          if (logText && logText !== lastLog) {
+            lastLog = logText;
+            upsertAgentLog("preview-log", "```bash\n" + logText.slice(-12000) + "\n```");
+          }
+
+          if (status === "ready") {
+            clearInterval(previewPollRef.current);
+            previewPollRef.current = null;
+
+            setPreviewUrl(fullUrl);
+            setPreviewOpen(true);
+            setPreviewLoading(false);
+
+            addChatMessage(
+                `✅ Build ok (${serveRoot || "output"}). Preview gestart.`,
+                "agent",
+                "success"
+            );
+            return;
+          }
+
+          if (status === "failed") {
+            clearInterval(previewPollRef.current);
+            previewPollRef.current = null;
+
+            setPreviewLoading(false);
+            addChatMessage(`❌ Build failed. Error: ${err || "unknown"}`, "agent", "error");
+
+            // auto-fix loop: 1x via bestaande modify endpoint (OpenAI)
+            if (!fixAttempted) {
+              fixAttempted = true;
+
+              setModifying(true);
+              addChatMessage("🛠️ Auto-fix: sending build error + logs to AI…", "agent", "thinking");
+
+              const fixRes = await api.post(`/projects/${projectId}/modify`, {
+                instruction:
+                    "Fix this project so it can be built and previewed as a web app. " +
+                    "Use the build logs below. Make minimal changes. Ensure Vite/React preview works.\n\n" +
+                    "BUILD LOGS:\n" +
+                    logText.slice(-12000),
+                context: {
+                  project_type: project?.project_type,
+                  current_file: selectedFile?.path,
+                },
+              });
+
+              pollModificationStatus(fixRes.data.job_id);
+              addChatMessage(
+                  "🔁 Auto-fix submitted. Wanneer klaar: klik Preview opnieuw om opnieuw te builden.",
+                  "agent"
+              );
+            }
+          }
+        } catch (e) {
+          clearInterval(previewPollRef.current);
+          previewPollRef.current = null;
+
+          setPreviewLoading(false);
+          addChatMessage("❌ Preview polling failed (status/log).", "agent", "error");
+        }
+      }, 1000);
+    } catch (e) {
       setPreviewLoading(false);
+      addChatMessage(
+          `❌ Preview start failed: ${e?.response?.data?.detail || "unknown error"}`,
+          "agent",
+          "error"
+      );
     }
   };
+
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
