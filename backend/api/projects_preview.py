@@ -1,4 +1,5 @@
-# /backend/api/projects_preview.py
+# FILE: backend/api/projects_preview.py
+
 """
 Project Preview API
 Handles preview generation for all project types.
@@ -29,15 +30,19 @@ router = APIRouter(prefix="/api/projects", tags=["preview"])
 mimetypes.init()
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
+mimetypes.add_type('application/javascript', '.jsx')   # ✅ FIX
+mimetypes.add_type('application/javascript', '.ts')    # ✅ FIX
+mimetypes.add_type('application/javascript', '.tsx')   # ✅ FIX
+mimetypes.add_type('application/json', '.map')         # ✅ FIX (sourcemaps)
 mimetypes.add_type('text/css', '.css')
 mimetypes.add_type('image/svg+xml', '.svg')
 
 
 @router.post("/{project_id}/preview")
 async def preview_project(
-    project_id: str,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+        project_id: str,
+        user=Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
 ):
     """
     Generate a preview for a project.
@@ -49,7 +54,7 @@ async def preview_project(
             select(Project).where(
                 Project.id == project_id,
                 Project.user_id == user["id"],
-            )
+                )
         )
     ).scalar_one_or_none()
 
@@ -91,8 +96,8 @@ async def preview_project(
 @router.get("/preview/{preview_id}/")
 @router.get("/preview/{preview_id}/{file_path:path}")
 async def serve_preview_file(
-    preview_id: str,
-    file_path: str = ""
+        preview_id: str,
+        file_path: str = ""
 ):
     """
     Serve static files from preview directory.
@@ -101,15 +106,15 @@ async def serve_preview_file(
     # Default to index.html
     if not file_path or file_path == "":
         file_path = "index.html"
-    
+
     preview_dir = PREVIEW_ROOT / preview_id
-    
+
     # Check if preview exists
     if not preview_dir.exists():
         raise HTTPException(status_code=404, detail="Preview not found")
-    
+
     target_file = preview_dir / file_path
-    
+
     # Security: ensure path is within preview directory
     try:
         target_file = target_file.resolve()
@@ -118,7 +123,7 @@ async def serve_preview_file(
             raise HTTPException(status_code=403, detail="Access denied")
     except Exception:
         raise HTTPException(status_code=403, detail="Invalid path")
-    
+
     # If directory, try index files
     if target_file.is_dir():
         for index in ["index.html", "index.php", "index.htm"]:
@@ -128,7 +133,7 @@ async def serve_preview_file(
                 break
         else:
             raise HTTPException(status_code=404, detail="No index file found")
-    
+
     # Check if file exists
     if not target_file.exists() or not target_file.is_file():
         # Try adding .html extension
@@ -137,15 +142,19 @@ async def serve_preview_file(
             target_file = html_file
         else:
             raise HTTPException(status_code=404, detail="File not found")
-    
+
     # Determine content type
     suffix = target_file.suffix.lower()
     content_type = mimetypes.guess_type(str(target_file))[0] or "application/octet-stream"
-    
+
     # Special handling for common types
     type_overrides = {
         ".js": "application/javascript",
         ".mjs": "application/javascript",
+        ".jsx": "application/javascript",   # ✅ FIX
+        ".ts": "application/javascript",    # ✅ FIX
+        ".tsx": "application/javascript",   # ✅ FIX
+        ".map": "application/json",         # ✅ FIX
         ".css": "text/css",
         ".html": "text/html",
         ".htm": "text/html",
@@ -163,10 +172,10 @@ async def serve_preview_file(
         ".eot": "application/vnd.ms-fontobject",
         ".php": "text/html",  # Serve PHP as HTML for now
     }
-    
+
     if suffix in type_overrides:
         content_type = type_overrides[suffix]
-    
+
     return FileResponse(
         target_file,
         media_type=content_type,

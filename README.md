@@ -59,7 +59,7 @@ CORS_ORIGINS=*
 
 **Frontend** (`frontend/.env`):
 ```env
-REACT_APP_BACKEND_URL=http://localhost:8001
+REACT_APP_BACKEND_URL=http://localhost:8000
 ```
 
 ### 3. Run the Application
@@ -67,7 +67,7 @@ REACT_APP_BACKEND_URL=http://localhost:8001
 ```bash
 # Terminal 1: Start backend
 cd backend
-uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 
 # Terminal 2: Start frontend
 cd frontend
@@ -110,7 +110,7 @@ WORKDIR /app
 COPY backend/requirements.txt .
 RUN pip install -r requirements.txt
 COPY backend/ .
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 ```dockerfile
@@ -139,7 +139,7 @@ server {
     }
     
     location /api {
-        proxy_pass http://localhost:8001;
+        proxy_pass http://localhost:8000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";

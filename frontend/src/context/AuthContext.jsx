@@ -1,6 +1,6 @@
 // frontend/src/context/AuthContext.jsx
 import { createContext, useContext, useEffect, useState } from "react";
-import api from "../api";
+import api, { setAuthToken } from "../api";
 
 const AuthContext = createContext(null);
 
@@ -10,51 +10,73 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (token) localStorage.setItem("access_token", token);
-    else localStorage.removeItem("access_token");
-  }, [token]);
-
-  useEffect(() => {
     const checkAuth = async () => {
-      if (!token) {
+      const t = localStorage.getItem("access_token");
+      if (!t) {
+        setUser(null);
+        setToken(null);
+        setAuthToken(null);
         setLoading(false);
         return;
       }
+
+      setToken(t);
+      setAuthToken(t);
+
       try {
         const res = await api.get("/auth/me");
         setUser(res.data);
       } catch {
+        localStorage.removeItem("access_token");
+        setAuthToken(null);
         setToken(null);
         setUser(null);
       } finally {
         setLoading(false);
       }
     };
+
     checkAuth();
-  }, [token]);
+  }, []);
 
   const login = async (email, password) => {
     const res = await api.post("/auth/login", { email, password });
-    setToken(res.data.access_token); // <-- FIX
+
+    const jwt = res.data?.token; // ✅ backend key = token
+    if (!jwt) throw new Error("Login response missing 'token'");
+
+    localStorage.setItem("access_token", jwt); // ✅ meteen, geen race
+    setAuthToken(jwt);                         // ✅ axios stuurt vanaf nu altijd Bearer
+    setToken(jwt);
     setUser(res.data.user);
+
     return res.data;
   };
 
   const register = async (name, email, password) => {
     const res = await api.post("/auth/register", { name, email, password });
-    setToken(res.data.access_token); // <-- FIX
+
+    const jwt = res.data?.token; // ✅ backend key = token
+    if (!jwt) throw new Error("Register response missing 'token'");
+
+    localStorage.setItem("access_token", jwt);
+    setAuthToken(jwt);
+    setToken(jwt);
     setUser(res.data.user);
+
     return res.data;
   };
 
   const logout = () => {
+    localStorage.removeItem("access_token");
+    setAuthToken(null);
     setToken(null);
     setUser(null);
   };
 
   return (
       <AuthContext.Provider
-          value={{ user, token, loading, login, register, logout, isAuthenticated: !!user }}
+          value={{ user, token, loading, login, register, logout, isAuthenticated: !!token }}
       >
         {children}
       </AuthContext.Provider>

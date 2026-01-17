@@ -1,9 +1,12 @@
+# FILE: backend/api/deps.py
+
 import jwt
+from datetime import timezone
+
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import timezone
 
 from backend.core.database import get_db
 from backend.core.config import JWT_SECRET, JWT_ALGORITHM
@@ -15,14 +18,20 @@ async def get_current_user(
         credentials: HTTPAuthorizationCredentials = Depends(security),
         db: AsyncSession = Depends(get_db),
 ):
-    if not credentials:
+    if not credentials or not credentials.credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user_id = payload.get("user_id")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
+        payload = jwt.decode(
+            credentials.credentials.strip(),
+            JWT_SECRET,
+            algorithms=[JWT_ALGORITHM],
+        )
+
+        # ✅ FIX: jouw JWT gebruikt user_id (maar support ook sub)
+        user_id = payload.get("user_id") or payload.get("sub") or payload.get("id")
+        if not user_id or not isinstance(user_id, str):
+            raise HTTPException(status_code=401, detail="Invalid token payload")
 
         user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
         if not user:
