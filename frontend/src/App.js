@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Generator from './pages/Generator';
 import Credits from './pages/Credits';
 import Settings from './pages/Settings';
+import CodeAssistant from './pages/CodeAssistant';
 import { Loader2 } from 'lucide-react';
 
 // Protected Route Component
@@ -81,7 +82,12 @@ function AppRoutes() {
           <Settings />
         </ProtectedRoute>
       } />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/code-assistant" element={
+        <ProtectedRoute>
+          <CodeAssistant />
+        </ProtectedRoute>
+      } />
+        <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
