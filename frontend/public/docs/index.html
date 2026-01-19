@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Webcrafters Studio Docs | AI App Builder & Self-Hosting</title>
+
+    <meta name="description" content="Official documentation for Webcrafters Studio. Learn how our AI app builder generates production-ready applications with previews, full source code and self-hosting support." />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://studio.webcrafters.be/docs" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <style>
+        :root {
+            --bg: #030712;
+            --panel: #020617;
+            --border: rgba(255,255,255,.08);
+            --text: #e5e7eb;
+            --muted: #9ca3af;
+            --accent: #22d3ee;
+            --accent-soft: rgba(34,211,238,.15);
+            --radius: 14px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            background: radial-gradient(1200px 600px at 20% -10%, rgba(34,211,238,.08), transparent),
+            radial-gradient(800px 400px at 80% 0%, rgba(139,92,246,.08), transparent),
+            var(--bg);
+            color: var(--text);
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        header {
+            border-bottom: 1px solid var(--border);
+            background: rgba(3,7,18,.7);
+            backdrop-filter: blur(14px);
+        }
+
+        .container {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            font-size: 20px;
+        }
+
+        .logo {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #22d3ee, #8b5cf6);
+            display: grid;
+            place-items: center;
+            color: white;
+            font-weight: 800;
+        }
+
+        h1 {
+            font-size: 42px;
+            line-height: 1.1;
+            margin: 40px 0 16px;
+            background: linear-gradient(90deg, #67e8f9, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        h2 {
+            margin-top: 48px;
+            font-size: 28px;
+            color: #67e8f9;
+        }
+
+        h3 {
+            margin-top: 28px;
+            font-size: 20px;
+            color: #c7d2fe;
+        }
+
+        p {
+            color: var(--muted);
+            line-height: 1.7;
+            margin: 12px 0;
+        }
+
+        ul {
+            margin: 12px 0 0 18px;
+            color: var(--muted);
+        }
+
+        li { margin: 6px 0; }
+
+        .card {
+            margin-top: 24px;
+            padding: 24px;
+            border-radius: var(--radius);
+            background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01));
+            border: 1px solid var(--border);
+        }
+
+        .grid {
+            display: grid;
+            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            margin-top: 24px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            margin-bottom: 12px;
+        }
+
+        .cta {
+            margin-top: 56px;
+            padding: 32px;
+            border-radius: var(--radius);
+            background: linear-gradient(135deg, rgba(34,211,238,.15), rgba(139,92,246,.15));
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .cta a {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 12px 22px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #22d3ee, #8b5cf6);
+            color: #020617;
+            font-weight: 700;
+        }
+
+        footer {
+            border-top: 1px solid var(--border);
+            margin-top: 64px;
+            padding: 32px 0;
+            text-align: center;
+            color: var(--muted);
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="container">
+        <div class="brand">
+            <div class="logo">✨</div>
+            Webcrafters Studio · Docs
+        </div>
+    </div>
+</header>
+
+<main class="container">
+
+    <span class="badge">Official documentation</span>
+    <h1>Webcrafters Studio Documentation</h1>
+
+    <p>
+        Webcrafters Studio is an AI-powered app builder that generates complete,
+        production-ready applications from natural language prompts.
+        Unlike typical AI website builders, Studio gives you real code,
+        real previews and full control over deployment.
+    </p>
+
+    <h2>What problem does Studio solve?</h2>
+    <p>
+        Most AI generators lock you into their platform.
+        You cannot download the full project, you cannot self-host,
+        and scaling beyond a demo becomes impossible.
+    </p>
+
+    <p>
+        Webcrafters Studio was built to remove that limitation.
+        It focuses on developers, agencies and founders who want speed
+        <em>without</em> sacrificing ownership.
+    </p>
+
+    <h2>How Webcrafters Studio works</h2>
+    <div class="grid">
+        <div class="card">
+            <h3>1. Describe your project</h3>
+            <p>
+                Explain what you want to build in plain language.
+                Studio translates intent into structured application logic.
+            </p>
+        </div>
+        <div class="card">
+            <h3>2. AI generates real code</h3>
+            <p>
+                Frontend, backend, configuration and structure are generated
+                as real files — not abstractions.
+            </p>
+        </div>
+        <div class="card">
+            <h3>3. Live previews</h3>
+            <p>
+                Your app runs in an isolated preview environment,
+                so you can test behaviour instantly.
+            </p>
+        </div>
+        <div class="card">
+            <h3>4. Export & self-host</h3>
+            <p>
+                Download the full source code and deploy it
+                wherever you want. No vendor lock-in.
+            </p>
+        </div>
+    </div>
+
+    <h2>Key features</h2>
+    <ul>
+        <li>AI-generated production-ready applications</li>
+        <li>Live preview environments</li>
+        <li>Full source code ownership</li>
+        <li>Self-hosting support</li>
+        <li>Built for developers and agencies</li>
+    </ul>
+
+    <h2>Who is this for?</h2>
+    <p>
+        Webcrafters Studio is designed for:
+    </p>
+    <ul>
+        <li>Developers who want to move faster</li>
+        <li>Agencies building MVPs for clients</li>
+        <li>Startups validating ideas quickly</li>
+        <li>Technical founders who hate lock-in</li>
+    </ul>
+
+    <h2>Related documentation</h2>
+    <ul>
+        <li><a href="/docs/ai-app-builder.html">What is an AI app builder?</a></li>
+        <li><a href="/docs/self-hosting.html">Self-hosting AI generated apps</a></li>
+        <li><a href="/docs/rork-alternative.html">Webcrafters Studio vs rork.ai</a></li>
+        <li><a href="/docs/famous-alternative.html">Webcrafters Studio vs famous.ai</a></li>
+    </ul>
+
+    <div class="cta">
+        <h2>Ready to build?</h2>
+        <p>
+            Start using Webcrafters Studio and turn ideas into running software.
+        </p>
+        <a href="https://studio.webcrafters.be">Open Webcrafters Studio</a>
+    </div>
+
+</main>
+
+<footer>
+    © 2026 Webcrafters Studio · Built in Belgium · No vendor lock-in
+</footer>
+
+</body>
+</html>
