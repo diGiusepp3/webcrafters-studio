@@ -1,9 +1,8 @@
-# =========================
-# /backend/services/ai_service.py
-# =========================
+# FILE: backend/services/ai_service.py
 
 import asyncio
 import json
+import re
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
@@ -16,37 +15,34 @@ openai_client = get_openai_client()
 # UNIVERSAL SYSTEM PROMPT
 # =========================
 SYSTEM_PROMPT = """
-You are an expert software architect, systems engineer, and platform specialist.
+You are an expert software architect, with a degree in website UI/UX, systems engineer AND senior product designer.
 
-You MUST generate a COMPLETE, REAL, RUNNABLE software project.
+You MUST generate a COMPLETE, REAL, RUNNABLE AND CLIENT-READY software project.
 This is NOT a demo, NOT a mock, NOT a sketch.
 
-HARD RULES (ABSOLUTE):
+CORE RULE:
 - Output ONLY valid JSON. No markdown. No explanations.
-- The project MUST run if the user follows the README.
-- ALL required source files MUST be included.
-- NEVER output placeholders like "TODO", "example", or "later".
-- NEVER omit platform-critical files.
-- NEVER guess the platform incorrectly.
-- If the user requests Android → output a FULL Android Studio project.
-- If the user requests iOS → output a FULL Xcode project.
-- If the user requests desktop → choose a real desktop stack.
-- If the user requests CLI → output a working CLI app.
-- If the user requests backend → output a runnable backend.
-- If the user requests fullstack → output frontend + backend.
+- Visual quality is one of the most important growing-points.
+- Result should be "client-ready" without manual changes
+- Use websites like Pexels, unsplash, gettyimages, or even openai to integrate images in the UI for nicer looks.
+- Use consistent typography
+- First impression must convince in <5 seconds
 
-SECURITY RULES:
-- NO hardcoded secrets.
-- Secrets MUST be read from environment variables.
-- App MUST crash if required secrets are missing.
-- NO default users, passwords, or tokens.
-- ALL data MUST be user-scoped.
+HARD UI REQUIREMENTS (FAIL IF MISSING):
+- Tailwind CSS MUST be used
+- A Hero section with IMAGE is REQUIRED
+- A Feature Grid with ICONS or IMAGES is REQUIRED
+- A Call-To-Action section is REQUIRED
+- At least 3 external image URLs (Unsplash/Pexels) MUST be present
+- No text-only pages allowed
+- No base64 images allowed
 
-FAILURE POLICY:
-- If requirements cannot be met → ask clarification questions.
-- NEVER silently downgrade the project scope.
+HARD RULES
+Every project MUST include a web-based UI that can be rendered in a browser.
+If the core application is not web-based, a WebView wrapper MUST be provided.
+Failure to include a web-renderable UI = invalid output.
 
-OUTPUT FORMAT:
+OUTPUT FORMAT (STRICT):
 {
   "name": "project-name",
   "description": "short description",
@@ -66,15 +62,6 @@ OUTPUT FORMAT:
 CLARIFY_SYSTEM_PROMPT = """
 Return ONLY valid JSON.
 
-Decide if clarification is required to produce a COMPLETE, RUNNABLE project.
-
-Ask questions ONLY if:
-- Target platform is ambiguous
-- Distribution method is unclear
-- Required hardware / OS is unclear
-
-Ask MAXIMUM 3 questions.
-
 Output:
 {
   "needs_clarification": true/false,
@@ -84,6 +71,62 @@ Output:
 """
 
 
+# =========================
+# JSON EXTRACTION (CRITICAL FIX)
+# =========================
+class InvalidAIJson(Exception):
+    pass
+
+
+def _extract_json(text: str) -> dict:
+    if not text:
+        raise InvalidAIJson("Empty AI response")
+
+    t = text.strip()
+
+    # 1) direct JSON
+    try:
+        return json.loads(t)
+    except Exception:
+        pass
+
+    # 2) ```json fenced
+    fence = re.search(r"```json\s*(\{.*?\})\s*```", t, re.S)
+    if fence:
+        try:
+            return json.loads(fence.group(1))
+        except Exception:
+            pass
+
+    # 3) first {...} block
+    brace = re.search(r"(\{.*\})", t, re.S)
+    if brace:
+        try:
+            return json.loads(brace.group(1))
+        except Exception:
+            pass
+
+    raise InvalidAIJson("Could not extract valid JSON")
+
+
+def _validate_generation_payload(data: dict):
+    if not isinstance(data, dict):
+        raise InvalidAIJson("Root is not object")
+
+    if "files" not in data or not isinstance(data["files"], list):
+        raise InvalidAIJson("Missing or invalid 'files' array")
+
+    for f in data["files"]:
+        if not isinstance(f, dict):
+            raise InvalidAIJson("File entry is not object")
+        for k in ("path", "content"):
+            if k not in f or not isinstance(f[k], str) or not f[k].strip():
+                raise InvalidAIJson(f"Invalid file field: {k}")
+
+
+# =========================
+# HELPERS
+# =========================
 def extract_last_user_text(conversation: str) -> str:
     if not conversation:
         return ""
@@ -93,12 +136,11 @@ def extract_last_user_text(conversation: str) -> str:
 
 
 # =========================
-# CLARIFY (FIXED & SAFE)
+# CLARIFY
 # =========================
 async def clarify_with_ai(prompt: str, project_type: str) -> ClarifyResponse:
     last_user = extract_last_user_text(prompt)
 
-    # Genoeg detail → geen clarificatie
     if len(last_user.split()) >= 20:
         return ClarifyResponse(
             needs_clarification=False,
@@ -111,8 +153,6 @@ Project type hint: {project_type}
 
 Conversation:
 {prompt}
-
-Determine if clarification is REQUIRED to build a REAL runnable project.
 """
 
     def _call():
@@ -126,11 +166,11 @@ Determine if clarification is REQUIRED to build a REAL runnable project.
         )
 
     resp = await asyncio.to_thread(_call)
-    content = resp.choices[0].message.content.strip()
+    raw = resp.choices[0].message.content.strip()
 
     try:
-        data = json.loads(content)
-    except json.JSONDecodeError:
+        data = _extract_json(raw)
+    except InvalidAIJson:
         return ClarifyResponse(
             needs_clarification=False,
             questions=[],
@@ -158,30 +198,18 @@ def build_generation_user_message(
 USER REQUEST:
 {prompt}
 
-MANDATORY INTERPRETATION RULES:
-- Determine the EXACT application type (mobile, desktop, cli, backend, firmware, web).
-- Determine the TARGET PLATFORM (Android, iOS, Windows, Linux, macOS, cross-platform).
-- Choose ONE correct language and framework.
-- Output a FULL project for that platform.
-
-FORBIDDEN:
-- README-only projects
-- Partial projects
-- Backend without frontend if frontend is requested
-- Web app when native app is requested
-
-REQUIREMENTS:
-- Include ALL build files
-- Include ALL source files
-- Include README.md with exact run/build steps
-
 PROJECT TYPE HINT:
 {pt}
+
+RULES:
+- Output FULL runnable project
+- Include ALL files
+- Include README.md
 """
 
 
 # =========================
-# GENERATION
+# GENERATION (FIXED)
 # =========================
 async def generate_code_with_ai(
         prompt: str,
@@ -202,12 +230,15 @@ async def generate_code_with_ai(
         )
 
     response = await asyncio.to_thread(_call)
-    content = response.choices[0].message.content.strip()
+    raw = response.choices[0].message.content.strip()
 
     try:
-        return json.loads(content)
-    except json.JSONDecodeError:
+        data = _extract_json(raw)
+        _validate_generation_payload(data)
+        return data
+    except InvalidAIJson as e:
+        # IMPORTANT: log raw output for debugging
         raise HTTPException(
             status_code=500,
-            detail="AI output invalid JSON — generation rejected",
-        )
+            detail=f"AI output invalid JSON — generation rejected\n\nRAW OUTPUT:\n{raw[:8000]}",
+        ) from e

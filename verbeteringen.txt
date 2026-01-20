@@ -1,0 +1,120 @@
+Groeipunten voor Webcrafters Studio
+1. Outputkwaliteit boven architectuur
+
+AI moet mooie websites maken, niet alleen correcte
+
+Visuele kwaliteit is nu het grootste groeipunt
+
+Resultaat moet “klantwaardig” zijn zonder manuele aanpassingen
+
+2. Strakkere AI-instructies (verplicht)
+
+Tailwind CSS altijd gebruiken
+
+Geen inline styles
+
+Mobile-first layouts
+
+Duidelijke hiërarchie: hero → secties → CTA
+
+Vaste spacing (24–64px)
+
+Dark + light mode standaard
+
+Consistente typography
+
+3. Stock images standaard inzetten
+
+Gebruik Unsplash / Pexels placeholders
+
+Altijd images in hero + feature sections
+
+Geen lege of tekst-only layouts
+
+Geen base64 images
+
+Screenshot genereren
+
+4. Automatische UI-polish stap
+
+Na eerste generatie altijd:
+
+spacing verbeteren
+
+kleuren balanceren
+
+layout versimpelen
+
+AI mag geen functionaliteit wijzigen, enkel UI
+
+5. Layout templates afdwingen
+
+Geen willekeurige layouts meer
+
+Standaard patronen:
+
+Hero
+
+Feature grid
+
+Benefits
+
+Social proof
+
+CTA
+
+Footer
+
+6. Preview visueel sterker maken
+
+Automatische screenshots (desktop + mobiel)
+
+Toon die in de UI
+
+Gebruik screenshots als input voor AI-verbetering
+
+7. UX-afwerking
+
+Skeleton loaders
+
+Empty states met uitleg
+
+Hover & focus states
+
+Subtiele animaties
+
+Consistente buttons en forms
+
+8. Resultaatgericht denken
+
+Elk project moet eruitzien alsof het live kan
+
+Minder “developer demo”, meer “product”
+
+Eerste indruk moet overtuigen in <5 seconden
+
+9. Positionering ondersteunen via output
+
+Output moet aantonen:
+
+eigendom (self-hostable)
+
+uitbreidbaarheid
+
+productiegeschiktheid
+
+Niet alleen beloven, maar tonen via gegenereerde sites
+
+10. Iteratief verbeteren, niet uitbreiden
+
+Geen nieuwe features toevoegen vóór:
+
+UI-output consequent sterk is
+
+previews indrukwekkend zijn
+
+Kwaliteit > kwantiteit
+
+Kort samengevat:
+Webcrafters Studio moet niet méér kunnen, maar beter tonen wat het al kan.
+De grootste groei zit in designkwaliteit, polish en presentatie.
