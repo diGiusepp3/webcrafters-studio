@@ -17,10 +17,7 @@ import {
 
 // ✅ Zet hier JOUW user UUID (die in je JWT/user object zit)
 // Voorbeeld uit je token: 241a8c44-669b-422f-a1c1-a89cd7faa7e9
-const DEV_USER_ID =
-    (import.meta?.env?.VITE_DEV_USER_ID ||
-        process.env.REACT_APP_DEV_USER_ID ||
-        "").trim();
+const DEV_USER_ID = (process.env.REACT_APP_DEV_USER_ID || "").trim();
 
 function isDevUser(user) {
   if (!DEV_USER_ID) return false;

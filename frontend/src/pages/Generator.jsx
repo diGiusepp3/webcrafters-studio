@@ -17,6 +17,7 @@ import { PromptSuggestions } from "@/components/generator/PromptSuggestions";
 import { TemplateSelector } from "@/components/generator/TemplateSelector";
 import { AgentTimelinePanel } from "@/components/generator/AgentTimelinePanel";
 import { DiffViewer } from "@/components/generator/DiffViewer";
+import { useAuth } from "@/context/AuthContext";
 
 import {
   Sparkles, Loader2, Wand2, AlertCircle, Bot, ChevronRight,
@@ -62,6 +63,7 @@ export default function Generator() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   // Mode detection
   const projectId = searchParams.get("projectId") || location.state?.projectId;
@@ -346,9 +348,40 @@ export default function Generator() {
     }, 1500);
   };
 
-  const handleGenerate = async () => {
-    if (!prompt.trim()) return;
+  // ===== HARD CREDIT CHECK =====
+  const ensureCanGenerate = async () => {
+    const DEV_USER_ID = process.env.REACT_APP_DEV_USER_ID;
 
+    if (!user?.id) {
+      navigate("/login");
+      throw new Error("Not authenticated");
+    }
+
+    // DEV bypass
+    if (String(user.id) === String(DEV_USER_ID)) {
+      return;
+    }
+
+    // ✅ CORRECT: check echte credits
+    const res = await api.get("/credits/balance");
+
+    const credits = Number(res.data?.credits ?? 0);
+
+    if (credits <= 0) {
+      navigate("/credits");
+      throw new Error("No credits");
+    }
+  };
+
+
+  const handleGenerate = async () => {
+    try {
+      await ensureCanGenerate();
+    } catch {
+      return;
+    }
+
+    if (!prompt.trim()) return;
     resetState();
     setStatusText("Starting AI Agent...");
     setLoading(true);
