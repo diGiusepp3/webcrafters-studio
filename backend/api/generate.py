@@ -294,7 +294,6 @@ def set_building_message(job_id: str, phase: str, attempt: Optional[int] = None,
 
     msg = f"{label}{suffix}… This can take a while."
     set_status(job_id, "running", "preview_build", msg)
-    # geen spam: chat enkel bij phase change/attempt start
     add_chat_message(job_id, f"🧪 {msg}")
 
 
@@ -318,22 +317,17 @@ def _runtime_error_signature(screenshots: Dict[str, Any]) -> str:
 
 
 async def _poll_preview_until_done_streaming(job_id: str, preview_id: str, timeout_seconds: int) -> Dict[str, Any]:
-    """
-    Poll preview status, and keep updating job.message + job.build_logs so users see progress.
-    """
     t0 = _now_ts()
     while True:
         st = read_status(preview_id)
         status = (st.get("status") or "").lower()
 
-        # stream logs while building
         logs = tail_logs(preview_id, max_bytes=PREVIEW_MAX_LOG_BYTES) or ""
         _set_live_logs(job_id, logs)
 
         if status in ("ready", "failed", "error"):
             return st
 
-        # user-facing heartbeat
         set_status(job_id, "running", "preview_build", "Building preview… This can take a while.")
         await asyncio.sleep(PREVIEW_POLL_SECONDS)
 
@@ -342,17 +336,12 @@ async def _poll_preview_until_done_streaming(job_id: str, preview_id: str, timeo
 
 
 def _call_run_fix_loop_dynamic(**kwargs) -> Any:
-    """
-    Calls run_fix_loop() with only the args it accepts.
-    IMPORTANT: supports required 'initial_error'.
-    """
     sig = inspect.signature(run_fix_loop)
     accepted = {}
     for name in sig.parameters.keys():
         if name in kwargs:
             accepted[name] = kwargs[name]
 
-    # if initial_error is required and missing -> synthesize from available info
     if "initial_error" in sig.parameters and "initial_error" not in accepted:
         accepted["initial_error"] = (
                 kwargs.get("initial_error")
@@ -455,7 +444,6 @@ async def _preview_fix_loop(
             add_chat_message(job_id, "✅ Preview ok.")
             return files, preview_summary
 
-        # No-progress detection
         sig_now = f"{st.get('status')}|{st.get('error') or ''}|{runtime_sig}"
         if last_sig and sig_now == last_sig:
             add_chat_message(job_id, "🛑 No progress detected (same failure twice). Stopping auto-fix loop.")
@@ -463,7 +451,6 @@ async def _preview_fix_loop(
             return files, preview_summary
         last_sig = sig_now
 
-        # Build/runtime failure -> run fix loop
         set_building_message(job_id, "fix", attempt, PREVIEW_FIX_MAX_ITERS)
 
         runtime_logs = ""
@@ -489,7 +476,7 @@ async def _preview_fix_loop(
             previous_fixes=fixes_memory,
             iteration=attempt,
             max_iters=PREVIEW_FIX_MAX_ITERS,
-            initial_error=initial_error,      # ✅ required by your run_fix_loop
+            initial_error=initial_error,
             build_error=st.get("error"),
             runtime_error_sig=runtime_sig,
         )
@@ -508,9 +495,6 @@ async def _preview_fix_loop(
     return files, preview_summary
 
 
-# ─────────────────────────────────────────────
-# CLARIFY (standalone)
-# ─────────────────────────────────────────────
 @router.post("/generate/clarify", response_model=ClarifyResponse)
 async def generate_clarify(req: ClarifyRequest, user=Depends(get_current_user)):
     if (req.project_type or "").lower().strip() != "any":
@@ -518,14 +502,10 @@ async def generate_clarify(req: ClarifyRequest, user=Depends(get_current_user)):
     return normalize_clarify(await clarify_with_ai(req.prompt, "any"))
 
 
-# ─────────────────────────────────────────────
-# START GENERATION
-# ─────────────────────────────────────────────
 @router.post("/generate")
 async def start_generation(req: GenerateRequest, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     cleanup_jobs()
 
-    # ✅ PAYWALL ENFORCEMENT (backend is source of truth)
     DEV_USER_ID = (os.getenv("DEV_USER_ID") or os.getenv("REACT_APP_DEV_USER_ID") or "").strip()
     if DEV_USER_ID and str(user["id"]) != str(DEV_USER_ID):
         async with SessionLocal() as db:
@@ -546,9 +526,6 @@ async def start_generation(req: GenerateRequest, background_tasks: BackgroundTas
     return {"job_id": job_id}
 
 
-# ─────────────────────────────────────────────
-# PREVIEW CLICK (NEW)
-# ─────────────────────────────────────────────
 @router.post("/generate/preview/{job_id}")
 async def build_preview_for_job(job_id: str, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     job = JOB_STATUS.get(job_id)
@@ -559,7 +536,6 @@ async def build_preview_for_job(job_id: str, background_tasks: BackgroundTasks, 
     if not job.get("files") or not job.get("effective_project_type") or not job.get("effective_prompt"):
         raise HTTPException(status_code=400, detail="Nothing to preview yet")
 
-    # run preview build loop in background
     background_tasks.add_task(_preview_worker, job_id)
     set_building_message(job_id, "build", 1, PREVIEW_FIX_MAX_ITERS)
     return {"status": "started"}
@@ -585,7 +561,6 @@ async def _preview_worker(job_id: str):
         job["preview_summary"] = preview_summary
         job["updated_at"] = _now_ts()
 
-        # keep status as done (generation is done) but with preview ready
         job["status"] = "done"
         job["step"] = "done"
         job["message"] = "Preview finished."
@@ -599,9 +574,6 @@ async def _preview_worker(job_id: str):
         add_chat_message(job_id, f"❌ Preview failed: {str(e)}", {"error": True})
 
 
-# ─────────────────────────────────────────────
-# POLL STATUS
-# ─────────────────────────────────────────────
 @router.get("/generate/status/{job_id}")
 async def get_generation_status(job_id: str, user=Depends(get_current_user)):
     job = JOB_STATUS.get(job_id)
@@ -635,7 +607,6 @@ async def get_generation_status(job_id: str, user=Depends(get_current_user)):
         "security_findings": job.get("security_findings", []),
         "applied_fixes": job.get("applied_fixes", []),
 
-        # show logs while preview building
         "build_logs": job.get("build_logs", ""),
         "runtime_logs": job.get("runtime_logs", ""),
 
@@ -646,9 +617,6 @@ async def get_generation_status(job_id: str, user=Depends(get_current_user)):
     }
 
 
-# ─────────────────────────────────────────────
-# CONTINUE AFTER CLARIFY
-# ─────────────────────────────────────────────
 @router.post("/generate/continue/{job_id}")
 async def continue_generation(job_id: str, answers: Dict[str, Any], background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     job = JOB_STATUS.get(job_id)
@@ -670,9 +638,6 @@ async def continue_generation(job_id: str, answers: Dict[str, Any], background_t
     return {"status": "resumed"}
 
 
-# ─────────────────────────────────────────────
-# BACKGROUND WORKER (GENERATION ONLY; NO PREVIEW BUILD HERE)
-# ─────────────────────────────────────────────
 async def _generation_worker(job_id: str, user: dict):
     job = JOB_STATUS[job_id]
     t0 = _now_ts()
@@ -707,7 +672,6 @@ async def _generation_worker(job_id: str, user: dict):
             job["effective_project_type"] = effective_pt
             job["effective_prompt"] = prompt
 
-            # Clarify if needed
             if (project_type or "").lower().strip() == "any":
                 set_status(job_id, "running", "clarifying", "Clarifying intent…", {"project_type": effective_pt})
                 clar = normalize_clarify(await clarify_with_ai(prompt, "any"))
@@ -719,7 +683,6 @@ async def _generation_worker(job_id: str, user: dict):
                     add_chat_message(job_id, "🤔 I need some clarification before I can generate your project.")
                     return
 
-            # Save generation record
             gen = Generation(
                 id=str(uuid.uuid4()),
                 user_id=user["id"],
@@ -731,7 +694,6 @@ async def _generation_worker(job_id: str, user: dict):
             db.add(gen)
             await db.commit()
 
-            # Generate code
             set_status(job_id, "running", "generating", "Generating code…", {"project_type": effective_pt})
             add_chat_message(job_id, f"🎨 Creating a {effective_pt} project…")
 
@@ -743,32 +705,43 @@ async def _generation_worker(job_id: str, user: dict):
             mark_step_complete(job_id, "generating", True, {"file_count": len(files)})
             add_chat_message(job_id, f"✨ Generated {len(files)} files!")
 
-            # Patch files
             set_status(job_id, "running", "patching", "Patching files…")
             files = patch_generated_project(files, effective_prefs)
             job["files"] = files
             mark_step_complete(job_id, "patching", True)
 
-            # Validate
             set_status(job_id, "running", "validating", "Validating output…")
             validation_errors = validate_node_openai(files) or []
             mark_step_complete(job_id, "validating", True, {"validation_errors": len(validation_errors)})
 
-            # Security check
             set_status(job_id, "running", "security_check", "Running security analysis…")
             security_findings, security_stats = check_project_security(files)
             job["security_findings"] = security_findings
 
             if security_findings and int(security_stats.get("auto_fixable", 0) or 0) > 0:
-                set_status(job_id, "running", "fixing", "Auto-fixing security issues…", {"fix_count": security_stats["auto_fixable"]})
+                set_status(
+                    job_id,
+                    "running",
+                    "fixing",
+                    "Auto-fixing security issues…",
+                    {"fix_count": int(security_stats.get("auto_fixable", 0) or 0)}
+                )
                 files, applied_security_fixes = apply_security_fixes(files, security_findings)
                 job["files"] = files
                 job["applied_fixes"] = _as_list_safe(job.get("applied_fixes")) + _as_list_safe(applied_security_fixes)
                 mark_step_complete(job_id, "fixing", True)
 
-            mark_step_complete(job_id, "security_check", True, {"security_findings": len(security_findings or [])})
+            # ✅ FIX: geef GEEN int door onder 'security_findings' (message generator verwacht iterable)
+            mark_step_complete(
+                job_id,
+                "security_check",
+                True,
+                {
+                    "security_findings": security_findings,                 # lijst (iterable)
+                    "security_findings_count": len(security_findings or []) # count apart
+                }
+            )
 
-            # Save project
             set_status(job_id, "running", "saving", "Saving project…")
             project_id = str(uuid.uuid4())
             now = datetime.utcnow()
@@ -795,7 +768,6 @@ async def _generation_worker(job_id: str, user: dict):
                     created_at=now,
                 ))
 
-            # Save preview report (generation report only; preview build happens on click)
             preview_report = PreviewReport(
                 id=str(uuid.uuid4()),
                 job_id=job_id,
@@ -819,7 +791,6 @@ async def _generation_worker(job_id: str, user: dict):
 
             mark_step_complete(job_id, "saving", True)
 
-            # Done (tell user Preview click will build)
             job["project_id"] = project_id
             set_status(job_id, "done", "done", "Generated. Click Preview to build & verify runtime.")
             add_chat_message(job_id, "✅ Generated. Click Preview to build & verify runtime.")
