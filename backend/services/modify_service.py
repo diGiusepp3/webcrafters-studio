@@ -94,7 +94,7 @@ Apply the requested modifications and output the updated files.
 """
 
     def _call():
-        return openai_client.chat.completions.create(
+        return _get_client().chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": MODIFY_SYSTEM_PROMPT},
