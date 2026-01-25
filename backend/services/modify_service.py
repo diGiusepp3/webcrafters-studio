@@ -7,7 +7,14 @@ from typing import Dict, Any, List, Optional
 
 from backend.core.config import get_openai_client
 
-openai_client = get_openai_client()
+# Lazy initialization
+_openai_client = None
+
+def _get_client():
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = get_openai_client()
+    return _openai_client
 
 MODIFY_SYSTEM_PROMPT = """
 You are an expert code modification assistant. Your job is to apply changes to an existing codebase based on user instructions.
