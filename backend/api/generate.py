@@ -41,6 +41,9 @@ from backend.services.security_checker import check_project_security, apply_secu
 from backend.services.fix_loop_service import run_fix_loop
 from backend.validators.node_openai_validator import validate_node_openai
 
+# ✅ Use the robust JSON parser (same one as repair step)
+from backend.repair.ai_repair import _parse_ai_json as parse_ai_json, AIJSONError
+
 # Preview service (build + status/log polling)
 from backend.services.preview_service import start_preview_job, read_status, tail_logs
 
@@ -212,67 +215,16 @@ def cleanup_jobs():
         JOB_STATUS.pop(job_id, None)
 
 
-# ─────────────────────────────────────────────
-# AI JSON repair + parse (minimal)
-# ─────────────────────────────────────────────
-def _extract_json_object(raw: str) -> str:
-    s = raw.strip()
-    i = s.find("{")
-    j = s.rfind("}")
-    if i == -1 or j == -1 or j <= i:
-        raise ValueError("No JSON object found in AI output")
-    return s[i: j + 1]
-
-
-def _repair_json_control_chars_in_strings(s: str) -> str:
-    out: List[str] = []
-    in_str = False
-    esc = False
-    for ch in s:
-        if not in_str:
-            if ch == '"':
-                in_str = True
-            out.append(ch)
-            continue
-
-        if esc:
-            out.append(ch)
-            esc = False
-            continue
-
-        if ch == "\\":
-            out.append(ch)
-            esc = True
-            continue
-
-        if ch == '"':
-            in_str = False
-            out.append(ch)
-            continue
-
-        if ch == "\n":
-            out.append("\\n")
-        elif ch == "\r":
-            out.append("\\r")
-        elif ch == "\t":
-            out.append("\\t")
-        else:
-            out.append(ch)
-
-    return "".join(out)
-
-
-def _parse_ai_json(raw: str) -> Dict[str, Any]:
-    js = _extract_json_object(raw)
-    js2 = _repair_json_control_chars_in_strings(js)
-    return json.loads(js2)
-
-
 def _normalize_ai_result(result: Any) -> Dict[str, Any]:
+    """
+    Accepts dict or string output and always returns validated normalized project JSON.
+    Uses the robust parser (extract JSON object + escape control chars + schema guard).
+    """
     if isinstance(result, dict):
-        return result
+        # Run through parser for schema guard
+        return parse_ai_json(json.dumps(result))
     if isinstance(result, str):
-        return _parse_ai_json(result)
+        return parse_ai_json(result)
     raise ValueError("AI result must be dict or JSON string")
 
 
@@ -698,7 +650,30 @@ async def _generation_worker(job_id: str, user: dict):
             add_chat_message(job_id, f"🎨 Creating a {effective_pt} project…")
 
             raw = await generate_code_with_ai(prompt, effective_pt, effective_prefs)
-            result = _normalize_ai_result(raw)
+
+            try:
+                result = _normalize_ai_result(raw)
+            except AIJSONError as e:
+                # Clean, clear failure (and prevents hanging jobs)
+                snippet = ""
+                if isinstance(raw, str):
+                    snippet = raw[:2000]
+                job["status"] = "error"
+                job["step"] = "generating"
+                job["error"] = f"AI output invalid JSON: {str(e)}"
+                job["message"] = "Generation failed: invalid AI JSON."
+                add_chat_message(job_id, "❌ AI output invalid JSON. Retrying generation usually fixes this.", {"error": True})
+                if snippet:
+                    add_chat_message(job_id, f"🧾 Raw snippet (first 2k chars):\n{snippet}", {"error": True})
+                if gen:
+                    try:
+                        gen.status = "error"
+                        gen.error_message = str(e)
+                        gen.duration_ms = int((_now_ts() - t0) * 1000)
+                        await db.commit()
+                    except Exception:
+                        pass
+                return
 
             files = result.get("files", []) or []
             job["files"] = files

@@ -2,15 +2,11 @@
 """
 Preview Service (production-friendly)
 - Writes project files into PREVIEW_ROOT/<preview_id>/
-- Starts a background build job (thread) when needed
-- Persists status + logs to disk so frontend can poll safely
+- DOES NOT build automatically after create (build only on explicit click)
+- Prefers AI/Generator build-manifest (framework/root/out_dir) over guessing
+- Verifies manifest against filesystem; falls back to detection if invalid
 - Publishes built output into PREVIEW_ROOT/<preview_id>/.serve/
-- Live "agent_events" + analysis logging for transparency
 - After ready -> render -> screenshots (desktop+mobile) via Playwright
-
-FIX:
-- Prefer AI/Generator build-manifest (framework/root/out_dir) over guessing.
-- Still verify manifest against filesystem; fallback to detection if invalid.
 """
 
 import asyncio
@@ -43,7 +39,13 @@ BUILD_MANIFEST_CANDIDATES = [
     "build.manifest.json",
 ]
 
-MAX_LOG_BYTES_DEFAULT = 12000
+MAX_LOG_BYTES_DEFAULT = int(os.environ.get("PREVIEW_MAX_LOG_BYTES", "12000"))
+
+INSTALL_TIMEOUT_SECONDS = int(os.environ.get("PREVIEW_INSTALL_TIMEOUT_SECONDS", "900"))  # 15 min
+BUILD_TIMEOUT_SECONDS = int(os.environ.get("PREVIEW_BUILD_TIMEOUT_SECONDS", "1200"))     # 20 min
+
+# Prevent multiple simultaneous builds per preview_id
+_BUILD_LOCKS: Dict[str, threading.Lock] = {}
 
 
 class PreviewError(Exception):
@@ -71,7 +73,9 @@ def _meta_path(preview_dir: Path) -> Path:
 
 def _write_json(path: Path, data: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(path)
 
 
 def _read_json(path: Path) -> Optional[Dict[str, Any]]:
@@ -81,6 +85,30 @@ def _read_json(path: Path) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _append_log(preview_dir: Path, line: str) -> None:
+    lp = _log_path(preview_dir)
+    lp.parent.mkdir(parents=True, exist_ok=True)
+    with lp.open("a", encoding="utf-8", errors="replace") as f:
+        f.write(line)
+        if not line.endswith("\n"):
+            f.write("\n")
+
+    # truncate log
+    try:
+        b = lp.read_bytes()
+        if len(b) > MAX_LOG_BYTES_DEFAULT:
+            lp.write_bytes(b[-MAX_LOG_BYTES_DEFAULT :])
+    except Exception:
+        pass
+
+
+def _log_section(preview_dir: Path, title: str, lines: List[str]) -> None:
+    _append_log(preview_dir, "")
+    _append_log(preview_dir, f"== {title} ==")
+    for l in lines:
+        _append_log(preview_dir, l)
+
+
 def _write_status(
         preview_dir: Path,
         status: str,
@@ -88,10 +116,10 @@ def _write_status(
         error: Optional[str] = None,
         serve_root: Optional[str] = None,
         analysis: Optional[Dict[str, Any]] = None,
-        screenshots: Optional[Dict[str, str]] = None,
+        screenshots: Optional[Dict[str, Any]] = None,
 ) -> None:
     payload: Dict[str, Any] = {
-        "status": status,  # queued | building | ready | failed
+        "status": status,  # created | queued | building | ready | failed
         "detected_type": detected_type,  # js:... | python | php | static | unknown | manifest:...
         "error": error,
         "serve_root": serve_root,  # ".serve" when built/published, else None
@@ -106,10 +134,9 @@ def _write_status(
 
 def read_status(preview_id: str) -> Dict[str, Any]:
     preview_dir = PREVIEW_ROOT / preview_id
-    sp = _status_path(preview_dir)
     if not preview_dir.exists():
         return {"status": "missing", "error": "Preview not found"}
-    data = _read_json(sp)
+    data = _read_json(_status_path(preview_dir))
     if not data:
         return {"status": "unknown", "error": "Status not available"}
     return data
@@ -126,15 +153,6 @@ def tail_logs(preview_id: str, max_bytes: int = MAX_LOG_BYTES_DEFAULT) -> str:
     return b.decode("utf-8", errors="replace")
 
 
-def _append_log(preview_dir: Path, line: str) -> None:
-    lp = _log_path(preview_dir)
-    lp.parent.mkdir(parents=True, exist_ok=True)
-    with lp.open("a", encoding="utf-8", errors="replace") as f:
-        f.write(line)
-        if not line.endswith("\n"):
-            f.write("\n")
-
-
 def _meta_add_event(meta: Dict[str, Any], s: str) -> None:
     meta.setdefault("agent_events", [])
     meta["agent_events"].append(s)
@@ -144,11 +162,10 @@ def _persist_meta(preview_dir: Path, meta: Dict[str, Any]) -> None:
     _write_json(_meta_path(preview_dir), meta)
 
 
-def _log_section(preview_dir: Path, title: str, lines: List[str]) -> None:
-    _append_log(preview_dir, "")
-    _append_log(preview_dir, f"== {title} ==")
-    for l in lines:
-        _append_log(preview_dir, l)
+def _ensure_lock(preview_id: str) -> threading.Lock:
+    if preview_id not in _BUILD_LOCKS:
+        _BUILD_LOCKS[preview_id] = threading.Lock()
+    return _BUILD_LOCKS[preview_id]
 
 
 # ----------------------------
@@ -156,51 +173,35 @@ def _log_section(preview_dir: Path, title: str, lines: List[str]) -> None:
 # ----------------------------
 def _render_base_url() -> str:
     base = (os.environ.get("PREVIEW_RENDER_BASE_URL") or "").strip().rstrip("/")
-    if base:
-        return base
-    return "http://127.0.0.1:8000"
+    return base if base else "http://127.0.0.1:8000"
 
 
 def _preview_public_url(preview_id: str) -> str:
+    # NOTE: keep trailing slash for client-side routers
     return f"{_render_base_url()}{PREVIEW_PATH_PREFIX}/{preview_id}/"
 
 
 def _run_screenshots(preview_id: str, detected_type: str, analysis: Dict[str, Any]) -> None:
-    """
-    Runs in its own thread AFTER the preview is ready.
-    Updates status.json + .preview_meta.json with screenshots + runtime logs.
-    """
     preview_dir = PREVIEW_ROOT / preview_id
-    meta = _read_json(_meta_path(preview_dir)) or {
-        "status": "ready",
-        "agent_events": [],
-        "analysis": analysis,
-        "output_dir": None,
-    }
+    meta = _read_json(_meta_path(preview_dir)) or {"status": "ready", "agent_events": [], "analysis": analysis}
 
     try:
         url = _preview_public_url(preview_id)
-
         _meta_add_event(meta, "Rendering preview in headless browser…")
         _persist_meta(preview_dir, meta)
+
         _append_log(preview_dir, "== screenshots ==")
         _append_log(preview_dir, f"render_url={url}")
 
         shots = asyncio.run(generate_screenshots(url, preview_dir))
 
-        # shots now contains:
-        # desktop, mobile, console, page_errors, request_failed
-        meta["screenshots"] = {
-            "desktop": shots.get("desktop"),
-            "mobile": shots.get("mobile"),
-        }
+        meta["screenshots"] = {"desktop": shots.get("desktop"), "mobile": shots.get("mobile")}
         meta["runtime"] = {
             "page_errors": shots.get("page_errors") or [],
             "console": shots.get("console") or [],
             "request_failed": shots.get("request_failed") or [],
         }
 
-        # Flag runtime error as non-fatal (preview still "ready")
         runtime_errors = []
         if meta["runtime"]["page_errors"]:
             runtime_errors.append(f"page_errors={len(meta['runtime']['page_errors'])}")
@@ -231,19 +232,6 @@ def _run_screenshots(preview_id: str, detected_type: str, analysis: Dict[str, An
             },
         )
 
-        _append_log(preview_dir, f"desktop={shots.get('desktop')}")
-        _append_log(preview_dir, f"mobile={shots.get('mobile')}")
-
-        if meta["runtime"]["page_errors"]:
-            _append_log(preview_dir, "== runtime:page_errors ==")
-            for e in meta["runtime"]["page_errors"][-20:]:
-                _append_log(preview_dir, str(e))
-
-        if meta["runtime"]["request_failed"]:
-            _append_log(preview_dir, "== runtime:request_failed ==")
-            for r in meta["runtime"]["request_failed"][-20:]:
-                _append_log(preview_dir, f"{r.get('method')} {r.get('url')} :: {r.get('error_text')}")
-
     except Exception as e:
         _meta_add_event(meta, f"Screenshot job failed: {e}")
         meta["screenshot_error"] = str(e)
@@ -260,7 +248,6 @@ def _run_screenshots(preview_id: str, detected_type: str, analysis: Dict[str, An
             analysis=analysis,
             screenshots=meta.get("screenshots"),
         )
-
 
 
 # ----------------------------
@@ -287,13 +274,12 @@ def _read_build_manifest(preview_dir: Path) -> Optional[Dict[str, Any]]:
 
 def _verify_manifest(preview_dir: Path, m: Dict[str, Any]) -> Tuple[bool, str]:
     """
-    Minimal sanity checks. We do NOT trust blindly.
-    Expected (example):
+    Expected example:
       {
         "kind": "js",
         "web_root": "frontend",
-        "framework": "vite",
-        "package_manager": "npm",
+        "framework": "vite" | "cra" | "next" | ...,
+        "package_manager": "npm" | "pnpm" | "yarn",
         "out_dir": "dist"
       }
     """
@@ -301,8 +287,8 @@ def _verify_manifest(preview_dir: Path, m: Dict[str, Any]) -> Tuple[bool, str]:
     if kind and kind not in ("js", "python", "php", "static", "unknown"):
         return False, f"manifest kind invalid: {kind}"
 
-    web_root = str(m.get("web_root") or "").strip().strip("/")
     if kind == "js":
+        web_root = str(m.get("web_root") or "").strip().strip("/")
         if not web_root:
             return False, "manifest.web_root missing"
         wr = preview_dir / web_root
@@ -310,13 +296,17 @@ def _verify_manifest(preview_dir: Path, m: Dict[str, Any]) -> Tuple[bool, str]:
             return False, f"manifest web_root not found: {web_root}"
         if not (wr / "package.json").exists():
             return False, f"manifest web_root has no package.json: {web_root}"
+        out_dir = str(m.get("out_dir") or "").strip().strip("/")
+        if out_dir:
+            od = wr / out_dir
+            # not required at create-time, only after build, so don't hard-fail here
+            if od.exists() and not od.is_dir():
+                return False, f"manifest out_dir invalid (not dir): {out_dir}"
+
     return True, "ok"
 
 
 def _apply_manifest_to_analysis(preview_dir: Path, analysis: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    If manifest is valid, override analysis so we build the correct web_root/framework.
-    """
     m = _read_build_manifest(preview_dir)
     if not m:
         analysis["manifest_used"] = False
@@ -332,26 +322,24 @@ def _apply_manifest_to_analysis(preview_dir: Path, analysis: Dict[str, Any]) -> 
         analysis["manifest_used"] = False
         return analysis
 
-    kind = str(m.get("kind") or "").strip().lower() or analysis.get("kind") or "unknown"
+    kind = str(m.get("kind") or "").strip().lower() or (analysis.get("kind") or "unknown")
+
     if kind == "js":
-        web_root = str(m.get("web_root") or "").strip().strip("/")
-        framework = str(m.get("framework") or "").strip().lower() or "unknown"
-        pm = str(m.get("package_manager") or "").strip().lower() or None
+        analysis["kind"] = "js"
+        analysis["web_root"] = str(m.get("web_root") or "").strip().strip("/")
+        analysis["flavor"] = (str(m.get("framework") or "").strip().lower() or "unknown")
+        analysis["package_manager"] = (str(m.get("package_manager") or "").strip().lower() or analysis.get("package_manager"))
         out_dir = str(m.get("out_dir") or "").strip().strip("/") or None
 
-        analysis["kind"] = "js"
-        analysis["flavor"] = framework
-        analysis["web_root"] = web_root
         analysis["has_package_json"] = True
-        analysis["package_manager"] = pm or analysis.get("package_manager")
-        analysis["out_dir_candidates"] = ([out_dir] if out_dir else []) + (analysis.get("out_dir_candidates") or [])
         analysis["buildable"] = True
+        analysis["out_dir_candidates"] = ([out_dir] if out_dir else []) + (analysis.get("out_dir_candidates") or [])
         analysis.setdefault("why", [])
         analysis["why"].append("manifest override: js build forced")
         analysis["manifest_used"] = True
         return analysis
 
-    # other kinds: only hint; keep existing logic
+    # Other kinds: hint only
     analysis["manifest_used"] = True
     analysis.setdefault("why", [])
     analysis["why"].append(f"manifest present: kind={kind}")
@@ -388,10 +376,7 @@ def _detect_entry_candidates(paths_lower: List[str]) -> Dict[str, List[str]]:
         if c in paths_lower:
             js_entries.append(c)
 
-    for c in [
-        "src/index.css", "src/main.css", "src/style.css",
-        "index.css", "style.css",
-    ]:
+    for c in ["src/index.css", "src/main.css", "src/style.css", "index.css", "style.css"]:
         if c in paths_lower:
             css_entries.append(c)
 
@@ -476,9 +461,6 @@ def _detect_js_flavor(web_root: Path, pkg: Dict[str, Any]) -> Tuple[str, List[st
     if has("@vue/cli-service") or "vue-cli-service" in build_script:
         hints.append("vue-cli detected")
         return "vue", hints
-    if has("express") or has("fastify") or has("koa"):
-        hints.append("node server deps detected (express/fastify/koa)")
-        return "node", hints
 
     if (web_root / "vite.config.js").exists() or (web_root / "vite.config.ts").exists():
         hints.append("vite config file detected")
@@ -540,24 +522,13 @@ def analyze_project(preview_dir: Path, original_files: List[Dict[str, Any]]) -> 
             analysis["buildable"] = False
             analysis["why"].append("no scripts.build found; will fallback to static preview index")
 
+        # defaults
         if flavor == "vite":
-            analysis["out_dir_candidates"] = ["dist", "build", "out", ".output/public"]
+            analysis["out_dir_candidates"] = ["dist"]
         elif flavor == "cra":
-            analysis["out_dir_candidates"] = ["build", "dist"]
+            analysis["out_dir_candidates"] = ["build"]
         elif flavor == "next":
-            analysis["out_dir_candidates"] = ["out", "build", "dist"]
-            if "export" in scripts:
-                analysis["why"].append("next export script present; may produce /out")
-        elif flavor == "nuxt":
-            analysis["out_dir_candidates"] = [".output/public", "dist"]
-        elif flavor == "sveltekit":
-            analysis["out_dir_candidates"] = ["build", "dist"]
-        elif flavor == "astro":
-            analysis["out_dir_candidates"] = ["dist"]
-        elif flavor == "angular":
-            analysis["out_dir_candidates"] = ["dist"]
-        elif flavor == "vue":
-            analysis["out_dir_candidates"] = ["dist", "build"]
+            analysis["out_dir_candidates"] = ["out"]
         else:
             analysis["out_dir_candidates"] = ["dist", "build", "out", "public"]
 
@@ -578,9 +549,8 @@ def analyze_project(preview_dir: Path, original_files: List[Dict[str, Any]]) -> 
         else:
             analysis["why"].append("no recognizable buildable signals; will generate file listing index")
 
-    # ✅ Apply manifest override AFTER baseline detection.
-    analysis = _apply_manifest_to_analysis(preview_dir, analysis)
-    return analysis
+    # ✅ manifest overrides after baseline detection
+    return _apply_manifest_to_analysis(preview_dir, analysis)
 
 
 def detect_project_type(files: List[Dict[str, Any]], preview_dir: Optional[Path] = None) -> str:
@@ -609,11 +579,7 @@ def create_static_index(preview_dir: Path, files: List[Dict[str, Any]]) -> None:
         return
 
     file_list = "\n".join(
-        [
-            f'<li><a href="{(f.get("path") or "").lstrip("/")}">{f.get("path")}</a></li>'
-            for f in files
-            if f.get("path")
-        ]
+        [f'<li><a href="{(f.get("path") or "").lstrip("/")}">{f.get("path")}</a></li>' for f in files if f.get("path")]
     )
 
     html = f"""<!DOCTYPE html>
@@ -761,39 +727,50 @@ def _find_build_output_dir(base_dir: Path, candidates: List[str]) -> Optional[Pa
     return None
 
 
+def _base_url_for_preview(preview_id: str) -> str:
+    # IMPORTANT: absolute prefix (fixes CRA /static root + preview subpath)
+    return f"{PREVIEW_PATH_PREFIX}/{preview_id}"
+
+
 def _install_deps(preview_dir: Path, web_root: Path, pm: str, env: Dict[str, str], meta: Dict[str, Any]) -> bool:
     _meta_add_event(meta, "Installing dependencies…")
     if pm == "pnpm":
-        rc = _run_stream(preview_dir, web_root, ["pnpm", "install", "--frozen-lockfile"], timeout=600, env=env)
+        rc = _run_stream(preview_dir, web_root, ["pnpm", "install", "--frozen-lockfile"], timeout=INSTALL_TIMEOUT_SECONDS, env=env)
         if rc != 0:
-            rc = _run_stream(preview_dir, web_root, ["pnpm", "install"], timeout=600, env=env)
+            rc = _run_stream(preview_dir, web_root, ["pnpm", "install"], timeout=INSTALL_TIMEOUT_SECONDS, env=env)
     elif pm == "yarn":
-        rc = _run_stream(preview_dir, web_root, ["yarn", "install", "--frozen-lockfile"], timeout=600, env=env)
+        rc = _run_stream(preview_dir, web_root, ["yarn", "install", "--frozen-lockfile"], timeout=INSTALL_TIMEOUT_SECONDS, env=env)
         if rc != 0:
-            rc = _run_stream(preview_dir, web_root, ["yarn", "install"], timeout=600, env=env)
+            rc = _run_stream(preview_dir, web_root, ["yarn", "install"], timeout=INSTALL_TIMEOUT_SECONDS, env=env)
     else:
         if (web_root / "package-lock.json").exists():
-            rc = _run_stream(preview_dir, web_root, ["npm", "ci"], timeout=600, env=env)
+            rc = _run_stream(preview_dir, web_root, ["npm", "ci"], timeout=INSTALL_TIMEOUT_SECONDS, env=env)
         else:
-            rc = _run_stream(preview_dir, web_root, ["npm", "install"], timeout=600, env=env)
+            rc = _run_stream(preview_dir, web_root, ["npm", "install"], timeout=INSTALL_TIMEOUT_SECONDS, env=env)
     return rc == 0
 
 
-def _run_build(preview_dir: Path, web_root: Path, pm: str, flavor: str, env: Dict[str, str], meta: Dict[str, Any]) -> bool:
+def _run_build(preview_dir: Path, web_root: Path, pm: str, flavor: str, env: Dict[str, str], meta: Dict[str, Any], preview_id: str) -> bool:
     _meta_add_event(meta, "Building…")
-    vite_base_args = ["--", "--base=./"] if flavor == "vite" else []
+
+    base_url = _base_url_for_preview(preview_id)
+
+    # Vite: enforce base path (NOT ./) so assets resolve under /api/projects/preview/<id>/
+    vite_base_args: List[str] = []
+    if flavor == "vite":
+        vite_base_args = ["--", f"--base={base_url}/"]
 
     if pm == "pnpm":
-        rc = _run_stream(preview_dir, web_root, ["pnpm", "build", *vite_base_args], timeout=900, env=env)
+        rc = _run_stream(preview_dir, web_root, ["pnpm", "build", *vite_base_args], timeout=BUILD_TIMEOUT_SECONDS, env=env)
     elif pm == "yarn":
-        rc = _run_stream(preview_dir, web_root, ["yarn", "build", *vite_base_args], timeout=900, env=env)
+        rc = _run_stream(preview_dir, web_root, ["yarn", "build", *vite_base_args], timeout=BUILD_TIMEOUT_SECONDS, env=env)
     else:
-        rc = _run_stream(preview_dir, web_root, ["npm", "run", "build", *vite_base_args], timeout=900, env=env)
+        rc = _run_stream(preview_dir, web_root, ["npm", "run", "build", *vite_base_args], timeout=BUILD_TIMEOUT_SECONDS, env=env)
 
     return rc == 0
 
 
-def _build_js_project(preview_dir: Path, analysis: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
+def _build_js_project(preview_id: str, preview_dir: Path, analysis: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
     meta: Dict[str, Any] = {
         "status": "building",
         "agent_events": [],
@@ -817,6 +794,18 @@ def _build_js_project(preview_dir: Path, analysis: Dict[str, Any]) -> Tuple[bool
     env = os.environ.copy()
     env["CI"] = "false"
 
+    # Framework-specific base path handling (web-first under subpath)
+    base_url = _base_url_for_preview(preview_id)
+
+    if flavor == "cra":
+        env["PUBLIC_URL"] = base_url  # fixes /static root issue in CRA
+    elif flavor == "vite":
+        env["VITE_BASE"] = f"{base_url}/"
+    elif flavor == "next":
+        # Only works if your generator uses these in next.config (best practice)
+        env["NEXT_PUBLIC_BASE_PATH"] = base_url
+        env["NEXT_PUBLIC_ASSET_PREFIX"] = base_url
+
     if not _install_deps(preview_dir, web_root, pm, env, meta):
         return False, "Install failed", meta
 
@@ -826,22 +815,23 @@ def _build_js_project(preview_dir: Path, analysis: Dict[str, Any]) -> Tuple[bool
     if "build" not in scripts or not str(scripts.get("build") or "").strip():
         return False, "No scripts.build in package.json", meta
 
+    # Next static export (only if export exists)
     if flavor == "next" and "export" in scripts:
         _meta_add_event(meta, "Next.js export script found; running build + export…")
-        if not _run_build(preview_dir, web_root, pm, flavor, env, meta):
+        if not _run_build(preview_dir, web_root, pm, flavor, env, meta, preview_id):
             return False, "Build failed", meta
 
         if pm == "pnpm":
-            rc = _run_stream(preview_dir, web_root, ["pnpm", "export"], timeout=900, env=env)
+            rc = _run_stream(preview_dir, web_root, ["pnpm", "export"], timeout=BUILD_TIMEOUT_SECONDS, env=env)
         elif pm == "yarn":
-            rc = _run_stream(preview_dir, web_root, ["yarn", "export"], timeout=900, env=env)
+            rc = _run_stream(preview_dir, web_root, ["yarn", "export"], timeout=BUILD_TIMEOUT_SECONDS, env=env)
         else:
-            rc = _run_stream(preview_dir, web_root, ["npm", "run", "export"], timeout=900, env=env)
+            rc = _run_stream(preview_dir, web_root, ["npm", "run", "export"], timeout=BUILD_TIMEOUT_SECONDS, env=env)
 
         if rc != 0:
             return False, "Export failed", meta
     else:
-        if not _run_build(preview_dir, web_root, pm, flavor, env, meta):
+        if not _run_build(preview_dir, web_root, pm, flavor, env, meta, preview_id):
             return False, "Build failed", meta
 
     out_dir = _find_build_output_dir(web_root, candidates)
@@ -858,19 +848,19 @@ def _build_js_project(preview_dir: Path, analysis: Dict[str, Any]) -> Tuple[bool
 
 
 # ----------------------------
-# Background job
+# Background build job (explicit click)
 # ----------------------------
-def _run_preview_job(preview_id: str, detected_type: str, original_files: List[Dict[str, Any]]) -> None:
+def _run_build_job(preview_id: str, detected_type: str, original_files: List[Dict[str, Any]]) -> None:
     preview_dir = PREVIEW_ROOT / preview_id
-    meta: Dict[str, Any] = {"status": "building", "agent_events": [], "analysis": None, "output_dir": None}
+    meta: Dict[str, Any] = _read_json(_meta_path(preview_dir)) or {"status": "building", "agent_events": [], "analysis": None, "output_dir": None}
 
     try:
         analysis = analyze_project(preview_dir, original_files)
         meta["analysis"] = analysis
 
         _write_status(preview_dir, "building", detected_type, analysis=analysis)
+        _append_log(preview_dir, f"== build job {preview_id} detected_type={detected_type} ==")
 
-        _append_log(preview_dir, f"== preview job {preview_id} detected_type={detected_type} ==")
         _log_section(
             preview_dir,
             "agent:analysis",
@@ -887,16 +877,15 @@ def _run_preview_job(preview_id: str, detected_type: str, original_files: List[D
                 f"manifest_path={analysis.get('manifest_path')}",
                 f"manifest_reason={analysis.get('manifest_reason')}",
                 f"why={'; '.join(analysis.get('why') or [])}",
-                f"entry_candidates={analysis.get('entry_candidates')}",
             ],
         )
-        _meta_add_event(meta, "Analyzing project files…")
-        _meta_add_event(meta, f"Analysis: {analysis.get('kind')} / {analysis.get('flavor')} (buildable={analysis.get('buildable')})")
+
+        _meta_add_event(meta, "Building preview (explicit click)…")
         _persist_meta(preview_dir, meta)
 
-        # JS build path
+        # JS build
         if analysis.get("kind") == "js" and analysis.get("buildable"):
-            ok, msg, meta2 = _build_js_project(preview_dir, analysis)
+            ok, msg, meta2 = _build_js_project(preview_id, preview_dir, analysis)
             meta.update(meta2)
             _persist_meta(preview_dir, meta)
 
@@ -915,7 +904,7 @@ def _run_preview_job(preview_id: str, detected_type: str, original_files: List[D
             threading.Thread(target=_run_screenshots, args=(preview_id, detected_type, analysis), daemon=True).start()
             return
 
-        # fallback: static index at root
+        # Fallback (no build)
         _meta_add_event(meta, "No safe static build path. Creating fallback preview index…")
         _persist_meta(preview_dir, meta)
 
@@ -934,10 +923,10 @@ def _run_preview_job(preview_id: str, detected_type: str, original_files: List[D
         threading.Thread(target=_run_screenshots, args=(preview_id, detected_type, analysis), daemon=True).start()
 
     except Exception as e:
-        _append_log(preview_dir, f"!! JOB CRASH: {e}")
+        _append_log(preview_dir, f"!! BUILD JOB CRASH: {e}")
         _write_status(preview_dir, "failed", detected_type, error=str(e), serve_root=None, analysis=meta.get("analysis") or None)
         meta["status"] = "failed"
-        _meta_add_event(meta, f"Job crash: {e}")
+        _meta_add_event(meta, f"Build job crash: {e}")
         _persist_meta(preview_dir, meta)
 
 
@@ -945,30 +934,43 @@ def _run_preview_job(preview_id: str, detected_type: str, original_files: List[D
 # Public API used by FastAPI layer
 # ----------------------------
 def start_preview_job(project_id: str, files: List[Dict[str, Any]], project_type: Optional[str] = None) -> Dict[str, Any]:
+    """
+    CREATE ONLY (no build).
+    Frontend must call `start_build(preview_id)` on preview click.
+    """
     preview_id = str(uuid.uuid4())
     preview_dir = PREVIEW_ROOT / preview_id
     preview_dir.mkdir(parents=True, exist_ok=True)
 
+    # reset log
     lp = _log_path(preview_dir)
     if lp.exists():
         lp.unlink()
 
+    # write files
     write_files(preview_dir, files)
 
     analysis = analyze_project(preview_dir, files)
     detected_type = detect_project_type(files, preview_dir=preview_dir)
 
-    _write_status(preview_dir, "queued", detected_type, analysis=analysis)
-    _append_log(preview_dir, f"queued preview (project_id={project_id})")
+    _write_status(preview_dir, "created", detected_type, analysis=analysis)
+    _append_log(preview_dir, f"created preview (project_id={project_id})")
     _append_log(preview_dir, f"detected_type={detected_type} (project_type={project_type})")
+
     if analysis.get("manifest_found"):
-        _append_log(preview_dir, f"manifest_path={analysis.get('manifest_path')} ok={analysis.get('manifest_ok')} used={analysis.get('manifest_used')} reason={analysis.get('manifest_reason')}")
+        _append_log(
+            preview_dir,
+            f"manifest_path={analysis.get('manifest_path')} ok={analysis.get('manifest_ok')} used={analysis.get('manifest_used')} reason={analysis.get('manifest_reason')}",
+        )
 
-    meta = {"status": "queued", "agent_events": ["Queued preview job"], "analysis": analysis, "output_dir": None}
+    meta = {
+        "status": "created",
+        "agent_events": ["Created preview (no build yet)"],
+        "analysis": analysis,
+        "output_dir": None,
+        "project_id": project_id,
+    }
     _persist_meta(preview_dir, meta)
-
-    t = threading.Thread(target=_run_preview_job, args=(preview_id, detected_type, files), daemon=True)
-    t.start()
 
     return {
         "preview_id": preview_id,
@@ -976,7 +978,39 @@ def start_preview_job(project_id: str, files: List[Dict[str, Any]], project_type
         "url": f"{PREVIEW_PATH_PREFIX}/{preview_id}/",
         "status_url": f"{PREVIEW_PATH_PREFIX}/{preview_id}/status",
         "log_url": f"{PREVIEW_PATH_PREFIX}/{preview_id}/logs",
+        "build_url": f"{PREVIEW_PATH_PREFIX}/{preview_id}/build",
     }
+
+
+def start_build(preview_id: str, files: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    BUILD ONLY (explicit click).
+    We require `files` because your current system reconstructs from DB payload; we don't assume disk persistence elsewhere.
+    """
+    preview_dir = PREVIEW_ROOT / preview_id
+    if not preview_dir.exists():
+        return {"ok": False, "error": "Preview not found"}
+
+    lock = _ensure_lock(preview_id)
+    if not lock.acquire(blocking=False):
+        return {"ok": True, "status": "building"}
+
+    try:
+        current = _read_json(_status_path(preview_dir)) or {}
+        if current.get("status") in ("building", "ready"):
+            return {"ok": True, "status": current.get("status")}
+
+        detected_type = detect_project_type(files, preview_dir=preview_dir)
+
+        _write_status(preview_dir, "queued", detected_type, analysis=current.get("analysis"))
+        _append_log(preview_dir, "queued build (explicit click)")
+
+        t = threading.Thread(target=_run_build_job, args=(preview_id, detected_type, files), daemon=True)
+        t.start()
+
+        return {"ok": True, "status": "queued"}
+    finally:
+        lock.release()
 
 
 def get_preview_serve_root(preview_id: str) -> Path:

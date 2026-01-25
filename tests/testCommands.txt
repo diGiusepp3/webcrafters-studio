@@ -1,0 +1,29 @@
+sudo tail -n 200 /var/log/apache2/error.log
+sudo tail -n 200 /var/log/apache2/studio-error.log 2>/dev/null || true
+sudo tail -n 200 /var/log/apache2/*error*.log | tail -n 200
+
+
+# 2) Vind de juiste systemd unit (want studio-backend.service bestaat niet)
+sudo systemctl list-units --type=service --all | grep -i studio || true
+sudo systemctl list-unit-files | grep -i studio || true
+sudo grep -RIn "/home/webcrafters/subdomains/studio" /etc/systemd/system /lib/systemd/system 2>/dev/null || true
+
+
+# 3) Als je de unitnaam hebt: pak de stacktrace (vervang <UNIT>)
+sudo journalctl -u <UNIT> -n 300 --no-pager
+
+
+# 4) Isoleren: hit de backend direct (zoek de lokale backend poort in je vhost of unit ExecStart)
+# eerst even check wat er luistert:
+sudo ss -ltnp | grep -E ":(8000|8001|8002|4000|4010|5000|5001)\b" || true
+
+
+# 5) Reproduceer met curl via de echte domain (zelfde payload als je frontend)
+curl -i -X POST "https://studio.webcrafters.be/api/auth/register" \
+-H "Content-Type: application/json" \
+-d '{"email":"test+dbg@webcrafters.be","password":"test123","name":"dbg"}'
+
+
+# 6) (meest voorkomende oorzaak) DB/migrations stuk -> check env/config die de backend gebruikt
+# (toon de unit om te zien welke .env / workingdir gebruikt wordt)
+sudo systemctl cat <UNIT> | sed -n '1,220p'
