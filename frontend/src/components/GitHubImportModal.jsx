@@ -53,6 +53,7 @@ export function GitHubImportModal({ open, onOpenChange, onImportSuccess }) {
     if (open) {
       checkConnection();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const checkConnection = async () => {
