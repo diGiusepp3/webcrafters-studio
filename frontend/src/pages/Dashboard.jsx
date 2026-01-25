@@ -675,6 +675,7 @@ export default function Dashboard() {
                       onDelete={(p) => setDeleteId(p.id)}
                       onDuplicate={handleDuplicate}
                       onToggleFavorite={handleToggleFavorite}
+                      onSync={() => fetchProjects()}
                     />
                   ))}
                 </div>
