@@ -749,6 +749,16 @@ export default function Dashboard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* GitHub Import Modal */}
+      <GitHubImportModal
+        open={githubImportOpen}
+        onOpenChange={setGithubImportOpen}
+        onImportSuccess={handleGitHubImportSuccess}
+      />
+
+      {/* Toast notifications */}
+      <Toaster position="top-right" richColors />
     </div>
   );
 }
