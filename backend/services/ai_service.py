@@ -163,7 +163,7 @@ Conversation:
 """
 
     def _call():
-        return openai_client.chat.completions.create(
+        return get_client().chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": CLARIFY_SYSTEM_PROMPT},
@@ -227,7 +227,7 @@ async def generate_code_with_ai(
     user_msg = build_generation_user_message(prompt, project_type, preferences)
 
     def _call():
-        return openai_client.chat.completions.create(
+        return get_client().chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
