@@ -58,6 +58,7 @@ app.include_router(credits_router)
 app.include_router(agent_router)
 app.include_router(modify_router)
 app.include_router(code_assistant_router)
+app.include_router(github_router)
 
 # Static preview serving (blijft root-level /preview)
 PREVIEW_ROOT = PathLib(os.environ.get("PREVIEW_ROOT", "/tmp/previews"))
