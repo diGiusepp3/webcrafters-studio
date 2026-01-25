@@ -9,7 +9,14 @@ from fastapi import HTTPException
 from backend.core.config import get_openai_client
 from backend.schemas.generate import ClarifyResponse
 
-openai_client = get_openai_client()
+# Lazy initialization - only create client when needed
+_openai_client = None
+
+def get_client():
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = get_openai_client()
+    return _openai_client
 
 # =========================
 # UNIVERSAL SYSTEM PROMPT
