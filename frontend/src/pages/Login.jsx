@@ -150,6 +150,35 @@ export default function Login() {
                 </>
               )}
             </Button>
+
+            {/* Divider */}
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-white/10"></div>
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-[#0a0f1a] px-2 text-gray-500">Or continue with</span>
+              </div>
+            </div>
+
+            {/* GitHub Login */}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleGitHubLogin}
+              disabled={githubLoading}
+              className="w-full h-12 bg-[#24292f] hover:bg-[#32383f] border-0 text-white"
+              data-testid="github-login-button"
+            >
+              {githubLoading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <>
+                  <GithubIcon className="w-5 h-5 mr-2" />
+                  Continue with GitHub
+                </>
+              )}
+            </Button>
           </form>
 
           <div className="mt-6 pt-6 border-t border-white/10 text-center">
