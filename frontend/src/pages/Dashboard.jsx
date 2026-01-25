@@ -1,16 +1,17 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '@/api';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Navbar } from '@/components/Navbar';
+import { GitHubImportModal } from '@/components/GitHubImportModal';
 import {
   Plus, Folder, Calendar, FileCode, Trash2, Download, Eye,
   Loader2, AlertCircle, Sparkles, Search, Filter, Grid3X3,
   List, Clock, Code2, Zap, TrendingUp, Activity, Copy,
   MoreVertical, Archive, Share2, Star, StarOff, Bot,
-  ChevronRight, ArrowUpRight, BarChart3, FolderOpen
+  ChevronRight, ArrowUpRight, BarChart3, FolderOpen, Github, RefreshCw
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -36,6 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Toaster, toast } from 'sonner';
 
 const normalizeError = (err, fallback = 'Something went wrong') =>
   err?.response?.data?.message || err?.response?.data?.detail || err?.message || fallback;
@@ -72,8 +74,17 @@ function StatsCard({ icon, label, value, trend, color = 'cyan' }) {
 }
 
 // Project Card Component
-function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onToggleFavorite }) {
+function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onToggleFavorite, onSync }) {
   const [isHovered, setIsHovered] = useState(false);
+  const [source, setSource] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    // Fetch GitHub source info
+    api.get(`/github/source/${project.id}`)
+      .then(res => setSource(res.data.has_source ? res.data : null))
+      .catch(() => {});
+  }, [project.id]);
 
   const getProjectTypeColor = (type) => {
     const colors = {
@@ -99,6 +110,23 @@ function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onTog
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.post(`/github/sync/${project.id}`);
+      if (res.data.success) {
+        toast.success(`Synced ${res.data.files_updated} files`);
+        onSync?.(project);
+      } else {
+        toast.error(res.data.message || 'Sync failed');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div
       className="glass-card rounded-xl overflow-hidden group"
@@ -111,13 +139,21 @@ function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onTog
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${getProjectTypeColor(project.project_type)} p-0.5`}>
               <div className="w-full h-full rounded-lg bg-[#0a0f1a] flex items-center justify-center">
-                <Code2 className="w-5 h-5 text-white" />
+                {source ? <Github className="w-5 h-5 text-white" /> : <Code2 className="w-5 h-5 text-white" />}
               </div>
             </div>
             <div>
-              <h3 className="font-heading font-bold text-white group-hover:text-cyan-400 transition-colors truncate max-w-[180px]">
-                {project.name}
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-heading font-bold text-white group-hover:text-cyan-400 transition-colors truncate max-w-[160px]">
+                  {project.name}
+                </h3>
+                {source && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#24292f] text-gray-300 flex items-center gap-1">
+                    <Github className="w-2.5 h-2.5" />
+                    {source.source_type === 'github_private' ? 'Private' : 'Public'}
+                  </span>
+                )}
+              </div>
               <span className={`inline-flex text-xs px-2 py-0.5 rounded-full bg-gradient-to-r ${getProjectTypeColor(project.project_type)} bg-opacity-20 text-white/80`}>
                 {project.project_type}
               </span>
@@ -139,6 +175,12 @@ function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onTog
                 <Download className="w-4 h-4" />
                 Download ZIP
               </DropdownMenuItem>
+              {source && (
+                <DropdownMenuItem onClick={handleSync} disabled={syncing} className="flex items-center gap-2 cursor-pointer">
+                  <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+                  Sync from GitHub
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => onDuplicate(project)} className="flex items-center gap-2 cursor-pointer">
                 <Copy className="w-4 h-4" />
                 Duplicate
@@ -178,6 +220,12 @@ function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onTog
             <Clock className="w-3.5 h-3.5" />
             {formatDate(project.created_at)}
           </span>
+          {source && (
+            <span className="flex items-center gap-1 text-gray-400">
+              <Github className="w-3 h-3" />
+              {source.owner}/{source.repo}
+            </span>
+          )}
         </div>
       </div>
 
@@ -192,15 +240,28 @@ function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onTog
           <Eye className="w-4 h-4 mr-1.5" />
           View
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => onDownload(project)}
-          className="flex-1 text-gray-400 hover:text-white hover:bg-white/5"
-        >
-          <Download className="w-4 h-4 mr-1.5" />
-          Download
-        </Button>
+        {source ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex-1 text-gray-400 hover:text-white hover:bg-white/5"
+          >
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${syncing ? 'animate-spin' : ''}`} />
+            Sync
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onDownload(project)}
+            className="flex-1 text-gray-400 hover:text-white hover:bg-white/5"
+          >
+            <Download className="w-4 h-4 mr-1.5" />
+            Download
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -260,8 +321,24 @@ export default function Dashboard() {
   const [filterType, setFilterType] = useState('all');
   const [viewMode, setViewMode] = useState('grid');
   const [sortBy, setSortBy] = useState('newest');
+  const [githubImportOpen, setGithubImportOpen] = useState(false);
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Handle GitHub OAuth callback
+  useEffect(() => {
+    const githubConnected = searchParams.get('github_connected');
+    const githubError = searchParams.get('github_error');
+    
+    if (githubConnected === 'true') {
+      toast.success('GitHub connected successfully!');
+      setSearchParams({});
+    } else if (githubError) {
+      toast.error(`GitHub connection failed: ${githubError}`);
+      setSearchParams({});
+    }
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -282,6 +359,11 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGitHubImportSuccess = (result) => {
+    toast.success(`Imported ${result.file_count} files from ${result.owner}/${result.repo}`);
+    fetchProjects();
   };
 
   const handleDelete = async () => {
@@ -457,13 +539,20 @@ export default function Dashboard() {
             {/* Quick Actions */}
             <div className="mb-8">
               <h2 className="font-heading text-lg font-bold text-white mb-4">Quick Actions</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <QuickActionCard
                   icon={<Bot className="w-5 h-5" />}
                   title="AI Generator"
                   description="Create a new project with AI"
                   onClick={() => navigate('/generate')}
                   gradient="from-cyan-500 to-blue-500"
+                />
+                <QuickActionCard
+                  icon={<Github className="w-5 h-5" />}
+                  title="Import GitHub"
+                  description="Import from repository"
+                  onClick={() => setGithubImportOpen(true)}
+                  gradient="from-gray-600 to-gray-800"
                 />
                 <QuickActionCard
                   icon={<Sparkles className="w-5 h-5" />}
@@ -586,6 +675,7 @@ export default function Dashboard() {
                       onDelete={(p) => setDeleteId(p.id)}
                       onDuplicate={handleDuplicate}
                       onToggleFavorite={handleToggleFavorite}
+                      onSync={() => fetchProjects()}
                     />
                   ))}
                 </div>
@@ -660,6 +750,16 @@ export default function Dashboard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* GitHub Import Modal */}
+      <GitHubImportModal
+        open={githubImportOpen}
+        onOpenChange={setGithubImportOpen}
+        onImportSuccess={handleGitHubImportSuccess}
+      />
+
+      {/* Toast notifications */}
+      <Toaster position="top-right" richColors />
     </div>
   );
 }

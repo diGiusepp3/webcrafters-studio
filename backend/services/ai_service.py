@@ -9,7 +9,14 @@ from fastapi import HTTPException
 from backend.core.config import get_openai_client
 from backend.schemas.generate import ClarifyResponse
 
-openai_client = get_openai_client()
+# Lazy initialization - only create client when needed
+_openai_client = None
+
+def get_client():
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = get_openai_client()
+    return _openai_client
 
 # =========================
 # UNIVERSAL SYSTEM PROMPT
@@ -156,7 +163,7 @@ Conversation:
 """
 
     def _call():
-        return openai_client.chat.completions.create(
+        return get_client().chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": CLARIFY_SYSTEM_PROMPT},
@@ -220,7 +227,7 @@ async def generate_code_with_ai(
     user_msg = build_generation_user_message(prompt, project_type, preferences)
 
     def _call():
-        return openai_client.chat.completions.create(
+        return get_client().chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},

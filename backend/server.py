@@ -24,7 +24,8 @@ from backend.api.projects_preview import router as preview_router
 from backend.api.credits import router as credits_router
 from backend.api.agent_ws import router as agent_router
 from backend.api.modify import router as modify_router
-from backend.api.code_assistant import router as code_assistant_router  # ✅ ADD
+from backend.api.code_assistant import router as code_assistant_router
+from backend.api.github import router as github_router
 
 
 logging.basicConfig(level=logging.INFO)
@@ -57,6 +58,7 @@ app.include_router(credits_router)
 app.include_router(agent_router)
 app.include_router(modify_router)
 app.include_router(code_assistant_router)
+app.include_router(github_router)
 
 # Static preview serving (blijft root-level /preview)
 PREVIEW_ROOT = PathLib(os.environ.get("PREVIEW_ROOT", "/tmp/previews"))

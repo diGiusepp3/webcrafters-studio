@@ -19,7 +19,7 @@ FS_ROOT = Path(os.getenv("DEV_FS_ROOT", "/home/webcrafters/subdomains/studio")).
 
 # ✅ DEV toegang via user_id (niet via email)
 # Zet in backend/.env:
-#   DEV_USER_ID=241a8c44-669b-422f-a1c1-a89cd7faa7e9
+#   DEV_USER_ID=git-studio
 # of:
 #   DEV_USER_IDS=uuid1,uuid2
 DEV_USER_IDS = {
