@@ -321,8 +321,24 @@ export default function Dashboard() {
   const [filterType, setFilterType] = useState('all');
   const [viewMode, setViewMode] = useState('grid');
   const [sortBy, setSortBy] = useState('newest');
+  const [githubImportOpen, setGithubImportOpen] = useState(false);
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Handle GitHub OAuth callback
+  useEffect(() => {
+    const githubConnected = searchParams.get('github_connected');
+    const githubError = searchParams.get('github_error');
+    
+    if (githubConnected === 'true') {
+      toast.success('GitHub connected successfully!');
+      setSearchParams({});
+    } else if (githubError) {
+      toast.error(`GitHub connection failed: ${githubError}`);
+      setSearchParams({});
+    }
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -343,6 +359,11 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGitHubImportSuccess = (result) => {
+    toast.success(`Imported ${result.file_count} files from ${result.owner}/${result.repo}`);
+    fetchProjects();
   };
 
   const handleDelete = async () => {
