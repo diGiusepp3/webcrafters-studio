@@ -350,6 +350,119 @@ class CodeForgeAPITester:
         self.token = original_token
         return success
 
+    def test_github_status_without_auth(self):
+        """Test GitHub status endpoint without authentication - should return 401"""
+        # Temporarily remove token
+        original_token = self.token
+        self.token = None
+        
+        success, response = self.run_test(
+            "GitHub Status (No Auth)",
+            "GET",
+            "github/status",
+            401  # Should require authentication
+        )
+        
+        # Restore token
+        self.token = original_token
+        return success
+
+    def test_github_oauth_start_without_auth(self):
+        """Test GitHub OAuth start endpoint without authentication - should return 401"""
+        # Temporarily remove token
+        original_token = self.token
+        self.token = None
+        
+        success, response = self.run_test(
+            "GitHub OAuth Start (No Auth)",
+            "POST",
+            "github/oauth/start",
+            401  # Should require authentication
+        )
+        
+        # Restore token
+        self.token = original_token
+        return success
+
+    def test_github_status_with_auth(self):
+        """Test GitHub status endpoint with authentication"""
+        success, response = self.run_test(
+            "GitHub Status (With Auth)",
+            "GET",
+            "github/status",
+            200
+        )
+        
+        if success and 'connected' in response:
+            print(f"   GitHub connected: {response.get('connected')}")
+            if response.get('connected'):
+                print(f"   GitHub username: {response.get('github_username')}")
+        
+        return success
+
+    def test_github_oauth_start_with_auth(self):
+        """Test GitHub OAuth start endpoint with authentication"""
+        success, response = self.run_test(
+            "GitHub OAuth Start (With Auth)",
+            "POST",
+            "github/oauth/start",
+            200
+        )
+        
+        if success and 'auth_url' in response:
+            auth_url = response.get('auth_url')
+            print(f"   Auth URL generated: {auth_url[:50]}...")
+            # Verify it's a GitHub OAuth URL
+            if 'github.com/login/oauth/authorize' in auth_url:
+                print("   ✅ Valid GitHub OAuth URL format")
+            else:
+                print("   ❌ Invalid GitHub OAuth URL format")
+                return False
+        
+        return success
+
+    def test_github_repos_without_connection(self):
+        """Test GitHub repos endpoint without GitHub connection"""
+        success, response = self.run_test(
+            "GitHub Repos (No Connection)",
+            "GET",
+            "github/repos",
+            400  # Should return 400 if GitHub not connected
+        )
+        return success
+
+    def test_github_import_public_invalid_url(self):
+        """Test GitHub public import with invalid URL"""
+        success, response = self.run_test(
+            "GitHub Import Public (Invalid URL)",
+            "POST",
+            "github/import/public",
+            400,
+            data={"url": "invalid-url"}
+        )
+        return success
+
+    def test_github_import_public_valid_url(self):
+        """Test GitHub public import with valid URL (should work without auth)"""
+        success, response = self.run_test(
+            "GitHub Import Public (Valid URL)",
+            "POST",
+            "github/import/public",
+            200,
+            data={
+                "url": "https://github.com/octocat/Hello-World",
+                "project_name": "Test Import"
+            }
+        )
+        
+        if success and 'project_id' in response:
+            print(f"   Imported project ID: {response.get('project_id')}")
+            print(f"   Files imported: {response.get('file_count')}")
+            if response.get('warnings'):
+                print(f"   Warnings: {len(response.get('warnings'))}")
+        
+        return success
+
 def main():
     print("🚀 Starting CodeForge API Tests")
     print("=" * 50)
