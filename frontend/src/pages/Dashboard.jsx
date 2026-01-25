@@ -539,13 +539,20 @@ export default function Dashboard() {
             {/* Quick Actions */}
             <div className="mb-8">
               <h2 className="font-heading text-lg font-bold text-white mb-4">Quick Actions</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <QuickActionCard
                   icon={<Bot className="w-5 h-5" />}
                   title="AI Generator"
                   description="Create a new project with AI"
                   onClick={() => navigate('/generate')}
                   gradient="from-cyan-500 to-blue-500"
+                />
+                <QuickActionCard
+                  icon={<Github className="w-5 h-5" />}
+                  title="Import GitHub"
+                  description="Import from repository"
+                  onClick={() => setGithubImportOpen(true)}
+                  gradient="from-gray-600 to-gray-800"
                 />
                 <QuickActionCard
                   icon={<Sparkles className="w-5 h-5" />}
