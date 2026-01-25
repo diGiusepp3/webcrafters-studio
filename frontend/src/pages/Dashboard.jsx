@@ -74,8 +74,17 @@ function StatsCard({ icon, label, value, trend, color = 'cyan' }) {
 }
 
 // Project Card Component
-function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onToggleFavorite }) {
+function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onToggleFavorite, onSync }) {
   const [isHovered, setIsHovered] = useState(false);
+  const [source, setSource] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    // Fetch GitHub source info
+    api.get(`/github/source/${project.id}`)
+      .then(res => setSource(res.data.has_source ? res.data : null))
+      .catch(() => {});
+  }, [project.id]);
 
   const getProjectTypeColor = (type) => {
     const colors = {
@@ -101,6 +110,23 @@ function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onTog
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.post(`/github/sync/${project.id}`);
+      if (res.data.success) {
+        toast.success(`Synced ${res.data.files_updated} files`);
+        onSync?.(project);
+      } else {
+        toast.error(res.data.message || 'Sync failed');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div
       className="glass-card rounded-xl overflow-hidden group"
@@ -113,13 +139,21 @@ function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onTog
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${getProjectTypeColor(project.project_type)} p-0.5`}>
               <div className="w-full h-full rounded-lg bg-[#0a0f1a] flex items-center justify-center">
-                <Code2 className="w-5 h-5 text-white" />
+                {source ? <Github className="w-5 h-5 text-white" /> : <Code2 className="w-5 h-5 text-white" />}
               </div>
             </div>
             <div>
-              <h3 className="font-heading font-bold text-white group-hover:text-cyan-400 transition-colors truncate max-w-[180px]">
-                {project.name}
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-heading font-bold text-white group-hover:text-cyan-400 transition-colors truncate max-w-[160px]">
+                  {project.name}
+                </h3>
+                {source && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#24292f] text-gray-300 flex items-center gap-1">
+                    <Github className="w-2.5 h-2.5" />
+                    {source.source_type === 'github_private' ? 'Private' : 'Public'}
+                  </span>
+                )}
+              </div>
               <span className={`inline-flex text-xs px-2 py-0.5 rounded-full bg-gradient-to-r ${getProjectTypeColor(project.project_type)} bg-opacity-20 text-white/80`}>
                 {project.project_type}
               </span>
@@ -141,6 +175,12 @@ function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onTog
                 <Download className="w-4 h-4" />
                 Download ZIP
               </DropdownMenuItem>
+              {source && (
+                <DropdownMenuItem onClick={handleSync} disabled={syncing} className="flex items-center gap-2 cursor-pointer">
+                  <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+                  Sync from GitHub
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => onDuplicate(project)} className="flex items-center gap-2 cursor-pointer">
                 <Copy className="w-4 h-4" />
                 Duplicate
@@ -180,6 +220,12 @@ function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onTog
             <Clock className="w-3.5 h-3.5" />
             {formatDate(project.created_at)}
           </span>
+          {source && (
+            <span className="flex items-center gap-1 text-gray-400">
+              <Github className="w-3 h-3" />
+              {source.owner}/{source.repo}
+            </span>
+          )}
         </div>
       </div>
 
@@ -194,15 +240,28 @@ function ProjectCard({ project, onView, onDownload, onDelete, onDuplicate, onTog
           <Eye className="w-4 h-4 mr-1.5" />
           View
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => onDownload(project)}
-          className="flex-1 text-gray-400 hover:text-white hover:bg-white/5"
-        >
-          <Download className="w-4 h-4 mr-1.5" />
-          Download
-        </Button>
+        {source ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex-1 text-gray-400 hover:text-white hover:bg-white/5"
+          >
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${syncing ? 'animate-spin' : ''}`} />
+            Sync
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onDownload(project)}
+            className="flex-1 text-gray-400 hover:text-white hover:bg-white/5"
+          >
+            <Download className="w-4 h-4 mr-1.5" />
+            Download
+          </Button>
+        )}
       </div>
     </div>
   );
