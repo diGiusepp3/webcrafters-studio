@@ -1,16 +1,17 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '@/api';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Navbar } from '@/components/Navbar';
+import { GitHubImportModal } from '@/components/GitHubImportModal';
 import {
   Plus, Folder, Calendar, FileCode, Trash2, Download, Eye,
   Loader2, AlertCircle, Sparkles, Search, Filter, Grid3X3,
   List, Clock, Code2, Zap, TrendingUp, Activity, Copy,
   MoreVertical, Archive, Share2, Star, StarOff, Bot,
-  ChevronRight, ArrowUpRight, BarChart3, FolderOpen
+  ChevronRight, ArrowUpRight, BarChart3, FolderOpen, Github, RefreshCw
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -36,6 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Toaster, toast } from 'sonner';
 
 const normalizeError = (err, fallback = 'Something went wrong') =>
   err?.response?.data?.message || err?.response?.data?.detail || err?.message || fallback;
