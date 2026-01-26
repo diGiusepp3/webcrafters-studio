@@ -518,8 +518,13 @@ async def generate_clarify(req: ClarifyRequest, user=Depends(get_current_user)):
 async def start_generation(req: GenerateRequest, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     cleanup_jobs()
 
-    DEV_USER_ID = (os.getenv("DEV_USER_ID") or os.getenv("REACT_APP_DEV_USER_ID") or "").strip()
-    if DEV_USER_ID and str(user["id"]) != str(DEV_USER_ID):
+    dev_ids_raw = ",".join(filter(None, [
+        os.getenv("DEV_USER_IDS", ""),
+        os.getenv("DEV_USER_ID", ""),
+        os.getenv("DEV_USER_CODEX", ""),
+    ]))
+    DEV_USER_IDS = {s.strip() for s in dev_ids_raw.split(",") if s.strip()}
+    if DEV_USER_IDS and str(user["id"]) not in DEV_USER_IDS:
         async with SessionLocal() as db:
             r = await db.execute(
                 select(func.coalesce(func.sum(CreditLedger.amount_cents), 0))

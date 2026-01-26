@@ -31,6 +31,7 @@ STATUS_FILE = "status.json"
 LOG_FILE = "build.log"
 SERVE_DIRNAME = ".serve"
 META_FILE = ".preview_meta.json"
+CANCEL_FILE = ".preview_cancel"
 
 # AI/Generator can drop one of these files in the project root
 BUILD_MANIFEST_CANDIDATES = [
@@ -69,6 +70,27 @@ def _serve_dir(preview_dir: Path) -> Path:
 
 def _meta_path(preview_dir: Path) -> Path:
     return preview_dir / META_FILE
+
+
+def _cancel_path(preview_dir: Path) -> Path:
+    return preview_dir / CANCEL_FILE
+
+
+def _is_cancelled(preview_dir: Path) -> bool:
+    return _cancel_path(preview_dir).exists()
+
+
+def _mark_cancelled(preview_dir: Path) -> None:
+    _cancel_path(preview_dir).write_text(str(int(time.time())), encoding="utf-8")
+
+
+def _clear_cancelled(preview_dir: Path) -> None:
+    try:
+        _cancel_path(preview_dir).unlink()
+    except FileNotFoundError:
+        return
+    except Exception:
+        pass
 
 
 def _write_json(path: Path, data: Dict[str, Any]) -> None:
@@ -119,7 +141,7 @@ def _write_status(
         screenshots: Optional[Dict[str, Any]] = None,
 ) -> None:
     payload: Dict[str, Any] = {
-        "status": status,  # created | queued | building | ready | failed
+        "status": status,  # created | queued | building | ready | failed | cancelled
         "detected_type": detected_type,  # js:... | python | php | static | unknown | manifest:...
         "error": error,
         "serve_root": serve_root,  # ".serve" when built/published, else None
@@ -160,6 +182,20 @@ def _meta_add_event(meta: Dict[str, Any], s: str) -> None:
 
 def _persist_meta(preview_dir: Path, meta: Dict[str, Any]) -> None:
     _write_json(_meta_path(preview_dir), meta)
+
+
+def _apply_cancel(
+        preview_dir: Path,
+        detected_type: str,
+        analysis: Optional[Dict[str, Any]],
+        meta: Dict[str, Any],
+        reason: str = "Cancelled by user",
+) -> None:
+    _append_log(preview_dir, "!! CANCELLED")
+    _write_status(preview_dir, "cancelled", detected_type, error=reason, serve_root=None, analysis=analysis)
+    meta["status"] = "cancelled"
+    _meta_add_event(meta, "Build cancelled by user")
+    _persist_meta(preview_dir, meta)
 
 
 def _ensure_lock(preview_id: str) -> threading.Lock:
@@ -692,10 +728,17 @@ def _run_stream(
         assert p.stdout is not None
         for line in p.stdout:
             _append_log(preview_dir, line.rstrip("\n"))
+            if _is_cancelled(preview_dir):
+                p.kill()
+                _append_log(preview_dir, "!! CANCELLED")
+                return 130
             if time.time() - start > timeout:
                 p.kill()
                 _append_log(preview_dir, "!! TIMEOUT")
                 return 124
+        if _is_cancelled(preview_dir):
+            _append_log(preview_dir, "!! CANCELLED")
+            return 130
         return p.wait()
     except Exception as e:
         _append_log(preview_dir, f"!! EXCEPTION: {e}")
@@ -857,6 +900,9 @@ def _run_build_job(preview_id: str, detected_type: str, original_files: List[Dic
     try:
         analysis = analyze_project(preview_dir, original_files)
         meta["analysis"] = analysis
+        if _is_cancelled(preview_dir):
+            _apply_cancel(preview_dir, detected_type, analysis, meta)
+            return
 
         _write_status(preview_dir, "building", detected_type, analysis=analysis)
         _append_log(preview_dir, f"== build job {preview_id} detected_type={detected_type} ==")
@@ -888,14 +934,23 @@ def _run_build_job(preview_id: str, detected_type: str, original_files: List[Dic
             ok, msg, meta2 = _build_js_project(preview_id, preview_dir, analysis)
             meta.update(meta2)
             _persist_meta(preview_dir, meta)
+            if _is_cancelled(preview_dir):
+                _apply_cancel(preview_dir, detected_type, analysis, meta)
+                return
 
             if not ok:
+                if _is_cancelled(preview_dir):
+                    _apply_cancel(preview_dir, detected_type, analysis, meta)
+                    return
                 _append_log(preview_dir, f"!! {msg}")
                 _write_status(preview_dir, "failed", detected_type, error=msg, serve_root=None, analysis=analysis)
                 meta["status"] = "failed"
                 _persist_meta(preview_dir, meta)
                 return
 
+            if _is_cancelled(preview_dir):
+                _apply_cancel(preview_dir, detected_type, analysis, meta)
+                return
             _write_status(preview_dir, "ready", detected_type, error=None, serve_root=SERVE_DIRNAME, analysis=analysis)
             meta["status"] = "ready"
             _meta_add_event(meta, "Preview ready. Starting render → screenshots…")
@@ -915,6 +970,9 @@ def _run_build_job(preview_id: str, detected_type: str, original_files: List[Dic
             else:
                 create_static_index(preview_dir, original_files)
 
+        if _is_cancelled(preview_dir):
+            _apply_cancel(preview_dir, detected_type, analysis, meta)
+            return
         _write_status(preview_dir, "ready", detected_type, error=None, serve_root=None, analysis=analysis)
         meta["status"] = "ready"
         _meta_add_event(meta, "Preview ready. Starting render → screenshots…")
@@ -991,6 +1049,8 @@ def start_build(preview_id: str, files: List[Dict[str, Any]]) -> Dict[str, Any]:
     if not preview_dir.exists():
         return {"ok": False, "error": "Preview not found"}
 
+    _clear_cancelled(preview_dir)
+
     lock = _ensure_lock(preview_id)
     if not lock.acquire(blocking=False):
         return {"ok": True, "status": "building"}
@@ -1012,6 +1072,27 @@ def start_build(preview_id: str, files: List[Dict[str, Any]]) -> Dict[str, Any]:
     finally:
         lock.release()
 
+
+def cancel_build(preview_id: str) -> Dict[str, Any]:
+    preview_dir = PREVIEW_ROOT / preview_id
+    if not preview_dir.exists():
+        return {"ok": False, "error": "Preview not found"}
+
+    current = _read_json(_status_path(preview_dir)) or {}
+    detected_type = current.get("detected_type") or "unknown"
+    status = current.get("status")
+    if status in ("ready", "failed", "cancelled"):
+        return {"ok": True, "status": status}
+
+    _mark_cancelled(preview_dir)
+    meta = _read_json(_meta_path(preview_dir)) or {
+        "status": "cancelled",
+        "agent_events": [],
+        "analysis": current.get("analysis"),
+        "output_dir": None,
+    }
+    _apply_cancel(preview_dir, detected_type, current.get("analysis"), meta)
+    return {"ok": True, "status": "cancelled"}
 
 def get_preview_serve_root(preview_id: str) -> Path:
     preview_root = PREVIEW_ROOT / preview_id

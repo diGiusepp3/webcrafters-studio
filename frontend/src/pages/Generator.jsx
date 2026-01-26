@@ -11,6 +11,7 @@ import { Navbar } from "@/components/Navbar";
 import { FileTree } from "@/components/FileTree";
 import { SecurityFindings } from "@/components/SecurityFindings";
 import { LiveCodeEditor } from "@/components/generator/LiveCodeEditor";
+import { CodeEditor } from "@/components/CodeEditor";
 import { ProjectTypeSelector } from "@/components/generator/ProjectTypeSelector";
 import { ClarifyDialog } from "@/components/generator/ClarifyDialog";
 import { PromptSuggestions } from "@/components/generator/PromptSuggestions";
@@ -23,7 +24,7 @@ import {
   Sparkles, Loader2, Wand2, AlertCircle, Bot, ChevronRight,
   Download, FileCode, Calendar, Folder, ChevronLeft, Eye, Play,
   Code2, Shield, CheckCircle2, XCircle, Clock, Zap, RefreshCw,
-  Copy, ExternalLink, Lightbulb, Terminal, Send,
+  ExternalLink, Lightbulb, Terminal, Send,
   Cpu, GitBranch, Layers, Package, Search, FlaskConical,
   Activity, Maximize2, Minimize2, X, MonitorPlay
 } from "lucide-react";
@@ -89,6 +90,7 @@ export default function Generator() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewFullscreen, setPreviewFullscreen] = useState(false);
+  const [previewJob, setPreviewJob] = useState(null);
 
   // AI Agent
   const [timeline, setTimeline] = useState([]);
@@ -123,12 +125,15 @@ export default function Generator() {
   const [proposalSummary, setProposalSummary] = useState("");
   const [proposalNotes, setProposalNotes] = useState([]);
   const [applyingProposal, setApplyingProposal] = useState(false);
+  const [editorDrafts, setEditorDrafts] = useState({});
+  const [editorSaving, setEditorSaving] = useState(false);
 
   // UI
   const [activeTab, setActiveTab] = useState('chat');
   const chatEndRef = useRef(null);
   const pollRef = useRef(null);
   const previewPollRef = useRef(null);
+  const previewStartedAtRef = useRef(null);
 
   // Progress steps
   const progressSteps = useMemo(() => [
@@ -188,6 +193,40 @@ export default function Generator() {
   // ==========================================
   // UTILITY FUNCTIONS
   // ==========================================
+  const PREVIEW_POLL_TIMEOUT_MS = 20 * 60 * 1000;
+  const apiBase = String(api?.defaults?.baseURL || "").replace(/\/$/, "");
+  const backendBase = apiBase
+    ? apiBase.replace(/\/api\/?$/, "")
+    : (process.env.REACT_APP_BACKEND_URL || "");
+
+  const resolvePreviewUrl = (value) => {
+    if (!value) return null;
+    if (/^https?:\/\//i.test(value)) return value;
+    const base = backendBase || window.location.origin;
+    const suffix = value.startsWith("/") ? value : `/${value}`;
+    return `${base}${suffix}`;
+  };
+
+  const toApiPath = (value) => {
+    if (!value) return null;
+    if (/^https?:\/\//i.test(value)) {
+      try {
+        const parsed = new URL(value);
+        if (apiBase) {
+          const base = new URL(apiBase);
+          if (parsed.origin === base.origin) {
+            return `${parsed.pathname}${parsed.search}`.replace(/^\/api\/?/, "");
+          }
+        }
+      } catch {
+        return value;
+      }
+      return value;
+    }
+    let path = value.replace(/^\/api\/?/, "").replace(/^api\/?/, "");
+    if (path.startsWith("/")) path = path.slice(1);
+    return path;
+  };
   const formatDate = (dateStr) =>
     new Date(dateStr).toLocaleDateString("en-US", {
       month: "short", day: "numeric", year: "numeric",
@@ -356,6 +395,7 @@ export default function Generator() {
   // ===== HARD CREDIT CHECK =====
   const ensureCanGenerate = async () => {
     const DEV_USER_ID = process.env.REACT_APP_DEV_USER_ID;
+    const DEV_USER_CODEX = process.env.REACT_APP_DEV_USER_CODEX;
 
     if (!user?.id) {
       navigate("/login");
@@ -363,7 +403,7 @@ export default function Generator() {
     }
 
     // DEV bypass
-    if (String(user.id) === String(DEV_USER_ID)) {
+    if (String(user.id) === String(DEV_USER_ID) || String(user.id) === String(DEV_USER_CODEX)) {
       return;
     }
 
@@ -707,9 +747,7 @@ export default function Generator() {
       // Start preview (backend currently returns { url, ... } in your codebase)
       const res = await api.post(`/projects/${projectId}/preview`);
       const { url, status_url, log_url, preview_id } = res.data || {};
-
-      const fullUrl =
-          url?.startsWith("http") ? url : url ? `${window.location.origin}${url}` : null;
+      const fullUrl = resolvePreviewUrl(url);
 
       if (!preview_id) {
         setPreviewLoading(false);
@@ -722,6 +760,9 @@ export default function Generator() {
         addChatMessage("❌ Preview start failed: backend returned no url", "agent", "error");
         return;
       }
+
+      setPreviewJob(preview_id ? { id: preview_id, statusUrl: status_url, logUrl: log_url } : null);
+      previewStartedAtRef.current = Date.now();
 
       try {
         const buildRes = await api.post(`/projects/preview/${preview_id}/build`);
@@ -750,7 +791,17 @@ export default function Generator() {
         setPreviewUrl(fullUrl);
         setPreviewOpen(true);
         setPreviewLoading(false);
+        setPreviewJob(null);
         addChatMessage("✅ Preview gestart.", "agent", "success");
+        return;
+      }
+
+      const statusPath = toApiPath(status_url);
+      const logPath = toApiPath(log_url);
+      if (!statusPath || !logPath) {
+        setPreviewLoading(false);
+        setPreviewJob(null);
+        addChatMessage("❌ Preview polling failed: invalid status/log url.", "agent", "error");
         return;
       }
 
@@ -760,9 +811,6 @@ export default function Generator() {
       // poll logs + status (CLI-like tail)
       previewPollRef.current = setInterval(async () => {
         try {
-          const statusPath = status_url.replace(/^\/api/, "");
-          const logPath = log_url.replace(/^\/api/, "");
-
           const [st, lg] = await Promise.all([
             api.get(statusPath),
             api.get(logPath, { responseType: "text" }),
@@ -778,6 +826,17 @@ export default function Generator() {
             upsertAgentLog("preview-log", "```bash\n" + logText.slice(-12000) + "\n```");
           }
 
+          const startedAt = previewStartedAtRef.current || Date.now();
+          if (Date.now() - startedAt > PREVIEW_POLL_TIMEOUT_MS) {
+            clearInterval(previewPollRef.current);
+            previewPollRef.current = null;
+            setPreviewLoading(false);
+            setPreviewJob(null);
+            addChatMessage("⏱️ Preview build timed out.", "agent", "error");
+            try { await api.post(`/projects/preview/${preview_id}/cancel`); } catch {}
+            return;
+          }
+
           if (status === "ready") {
             clearInterval(previewPollRef.current);
             previewPollRef.current = null;
@@ -785,6 +844,7 @@ export default function Generator() {
             setPreviewUrl(fullUrl);
             setPreviewOpen(true);
             setPreviewLoading(false);
+            setPreviewJob(null);
 
             addChatMessage(
                 `✅ Build ok (${serveRoot || "output"}). Preview gestart.`,
@@ -799,6 +859,7 @@ export default function Generator() {
             previewPollRef.current = null;
 
             setPreviewLoading(false);
+            setPreviewJob(null);
             addChatMessage(`❌ Build failed. Error: ${err || "unknown"}`, "agent", "error");
 
             // auto-fix loop: 1x via bestaande modify endpoint (OpenAI)
@@ -824,19 +885,29 @@ export default function Generator() {
               addChatMessage(
                   "🔁 Auto-fix submitted. Wanneer klaar: klik Preview opnieuw om opnieuw te builden.",
                   "agent"
-              );
+                );
             }
+          }
+
+          if (status === "cancelled") {
+            clearInterval(previewPollRef.current);
+            previewPollRef.current = null;
+            setPreviewLoading(false);
+            setPreviewJob(null);
+            addChatMessage("🛑 Preview build cancelled.", "agent");
           }
         } catch (e) {
           clearInterval(previewPollRef.current);
           previewPollRef.current = null;
 
           setPreviewLoading(false);
+          setPreviewJob(null);
           addChatMessage("❌ Preview polling failed (status/log).", "agent", "error");
         }
       }, 1000);
     } catch (e) {
       setPreviewLoading(false);
+      setPreviewJob(null);
       addChatMessage(
           `❌ Preview start failed: ${e?.response?.data?.detail || "unknown error"}`,
           "agent",
@@ -845,9 +916,84 @@ export default function Generator() {
     }
   };
 
+  const handleCancelPreview = async () => {
+    if (!previewJob?.id) return;
+    if (previewPollRef.current) {
+      clearInterval(previewPollRef.current);
+      previewPollRef.current = null;
+    }
+    setPreviewLoading(false);
+    setPreviewJob(null);
+    try {
+      await api.post(`/projects/preview/${previewJob.id}/cancel`);
+      addChatMessage("🛑 Preview build cancelled.", "agent");
+    } catch (err) {
+      addChatMessage("⚠️ Failed to cancel preview build.", "agent", "error");
+    }
+  };
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
+  const getEditorValue = () => {
+    if (!selectedFile) return "";
+    const hasDraft = Object.prototype.hasOwnProperty.call(editorDrafts, selectedFile.path);
+    return hasDraft ? editorDrafts[selectedFile.path] : (selectedFile.content || "");
+  };
+
+  const isEditorDirty = () => {
+    if (!selectedFile) return false;
+    const hasDraft = Object.prototype.hasOwnProperty.call(editorDrafts, selectedFile.path);
+    if (!hasDraft) return false;
+    return editorDrafts[selectedFile.path] !== (selectedFile.content || "");
+  };
+
+  const handleEditorChange = (value) => {
+    if (!selectedFile) return;
+    setEditorDrafts((prev) => ({
+      ...prev,
+      [selectedFile.path]: value,
+    }));
+  };
+
+  const handleSaveFile = async () => {
+    if (!selectedFile || !projectId) return;
+    const path = selectedFile.path;
+    const hasDraft = Object.prototype.hasOwnProperty.call(editorDrafts, path);
+    const content = hasDraft ? editorDrafts[path] : (selectedFile.content || "");
+    if (content === (selectedFile.content || "")) return;
+
+    setEditorSaving(true);
+    setError("");
+    try {
+      const res = await api.post(`/projects/${projectId}/files`, {
+        path,
+        content,
+        language: selectedFile.language,
+      });
+      const saved = res.data;
+      setProject((prev) => {
+        if (!prev) return prev;
+        const files = [...(prev.files || [])];
+        const idx = files.findIndex((f) => f.path === saved.path);
+        if (idx >= 0) {
+          files[idx] = { ...files[idx], content: saved.content, language: saved.language };
+        } else {
+          files.push(saved);
+        }
+        return { ...prev, files };
+      });
+      setSelectedFile((prev) => {
+        if (!prev || prev.path !== saved.path) return prev;
+        return { ...prev, content: saved.content, language: saved.language };
+      });
+      setEditorDrafts((prev) => {
+        const next = { ...prev };
+        delete next[path];
+        return next;
+      });
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Failed to save file");
+    } finally {
+      setEditorSaving(false);
+    }
   };
 
   // ==========================================
@@ -948,6 +1094,17 @@ export default function Generator() {
                   )}
                   Preview
                 </Button>
+                {previewLoading && previewJob?.id && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCancelPreview}
+                    className="glass-card border-red-500/30 text-red-400 hover:bg-red-500/10"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Cancel
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -999,32 +1156,15 @@ export default function Generator() {
           {/* Center: Code editor */}
           <div className="flex-1 flex flex-col overflow-hidden">
             {selectedFile ? (
-              <>
-                <div className="px-4 py-2 border-b border-white/5 bg-black/40 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <FileCode className="w-4 h-4 text-cyan-400" />
-                    <span className="text-sm text-white font-mono">{selectedFile.path}</span>
-                    {isTyping && currentTypingFile?.path === selectedFile.path && (
-                      <span className="text-xs text-cyan-400 animate-pulse">● Writing...</span>
-                    )}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => copyToClipboard(selectedFile.content)}
-                    className="h-7 px-2 text-gray-400 hover:text-white"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-                <div className="flex-1 overflow-auto">
-                  <LiveCodeEditor
-                    file={selectedFile}
-                    isTyping={isTyping && currentTypingFile?.path === selectedFile.path}
-                    className="h-full"
-                  />
-                </div>
-              </>
+              <CodeEditor
+                file={selectedFile}
+                value={getEditorValue()}
+                onChange={handleEditorChange}
+                onSave={handleSaveFile}
+                isDirty={isEditorDirty()}
+                isSaving={editorSaving}
+                readOnly={isTyping && currentTypingFile?.path === selectedFile.path}
+              />
             ) : (
               <div className="flex-1 flex items-center justify-center text-gray-500">
                 <div className="text-center">

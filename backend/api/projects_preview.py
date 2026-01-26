@@ -24,6 +24,7 @@ from backend.services.preview_service import (
     META_FILE,
     PREVIEW_ROOT,
     PreviewError,
+    cancel_build,
     get_preview_serve_root,
     read_status,
     start_build,
@@ -134,6 +135,45 @@ async def preview_build(
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error", "Failed to start build"))
 
+    return result
+
+
+@router.post("/preview/{preview_id}/cancel")
+async def preview_cancel(
+        preview_id: str,
+        user=Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+):
+    preview_dir = PREVIEW_ROOT / preview_id
+    meta_path = preview_dir / META_FILE
+
+    if not meta_path.exists():
+        raise HTTPException(status_code=404, detail="Preview not found")
+
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Preview metadata invalid")
+
+    project_id = meta.get("project_id")
+    if not project_id:
+        raise HTTPException(status_code=400, detail="Preview metadata missing project")
+
+    project = (
+        await db.execute(
+            select(Project).where(
+                Project.id == project_id,
+                Project.user_id == user["id"],
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Preview not found")
+
+    result = cancel_build(preview_id)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to cancel preview build"))
     return result
 
 

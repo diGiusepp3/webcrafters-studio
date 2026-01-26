@@ -64,6 +64,10 @@ class GitHubSyncRequest(BaseModel):
     force: bool = Field(False, description="Force sync even if local changes detected")
 
 
+class GitHubRefreshRequest(BaseModel):
+    force: bool = Field(False, description="Force refresh even if local changes detected")
+
+
 class GitHubSyncResponse(BaseModel):
     success: bool
     message: str
@@ -83,3 +87,4 @@ class GitHubRefreshResponse(BaseModel):
     message: str
     updated_files: List[GitHubRefreshFileUpdate] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
+    has_local_changes: bool = False

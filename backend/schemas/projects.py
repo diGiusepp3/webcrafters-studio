@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 class ProjectResponse(BaseModel):
@@ -22,3 +22,14 @@ class ProjectHistoryItem(BaseModel):
     created_at: str
     file_count: int
     has_validation_errors: bool = False
+
+class ProjectFileSaveRequest(BaseModel):
+    path: str
+    content: str
+    language: Optional[str] = None
+
+class ProjectFileSaveResponse(BaseModel):
+    path: str
+    content: str
+    language: str
+    action: str
