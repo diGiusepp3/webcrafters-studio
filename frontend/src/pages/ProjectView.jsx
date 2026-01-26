@@ -824,7 +824,7 @@ export default function ProjectView() {
           </div>
 
           {/* Right: AI Agent Panel */}
-          <div className="w-[450px] border-l border-white/5 bg-[#030712] flex flex-col overflow-hidden">
+          <div className="w-[450px] border-l border-white/5 bg-[#030712] flex flex-col overflow-y-auto">
             {/* AI Input Section */}
             <Card className="m-4 mb-2 bg-black/40 border-white/10">
               <CardHeader className="pb-3">
