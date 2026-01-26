@@ -601,14 +601,41 @@ export default function Generator() {
     try {
       // Start preview (backend currently returns { url, ... } in your codebase)
       const res = await api.post(`/projects/${projectId}/preview`);
-      const { url, status_url, log_url } = res.data || {};
+      const { url, status_url, log_url, preview_id } = res.data || {};
 
       const fullUrl =
           url?.startsWith("http") ? url : url ? `${window.location.origin}${url}` : null;
 
+      if (!preview_id) {
+        setPreviewLoading(false);
+        addChatMessage("Preview start failed: missing preview id.", "agent", "error");
+        return;
+      }
+
       if (!fullUrl) {
         setPreviewLoading(false);
         addChatMessage("❌ Preview start failed: backend returned no url", "agent", "error");
+        return;
+      }
+
+      try {
+        const buildRes = await api.post(`/projects/preview/${preview_id}/build`);
+        if (buildRes?.data?.ok === false) {
+          setPreviewLoading(false);
+          addChatMessage(
+            `Preview build failed: ${buildRes?.data?.error || "unknown error"}`,
+            "agent",
+            "error"
+          );
+          return;
+        }
+      } catch (buildErr) {
+        setPreviewLoading(false);
+        addChatMessage(
+          `Preview build failed: ${buildErr?.response?.data?.detail || "unknown error"}`,
+          "agent",
+          "error"
+        );
         return;
       }
 

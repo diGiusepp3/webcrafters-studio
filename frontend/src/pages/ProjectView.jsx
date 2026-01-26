@@ -50,6 +50,7 @@ export default function ProjectView() {
   const [sessionId, setSessionId] = useState(null);
   
   const wsRef = useRef(null);
+  const previewPollRef = useRef(null);
 
   const fetchProject = useCallback(async () => {
     setLoading(true);
@@ -71,6 +72,15 @@ export default function ProjectView() {
   useEffect(() => {
     fetchProject();
   }, [fetchProject]);
+
+  useEffect(() => {
+    return () => {
+      if (previewPollRef.current) {
+        clearInterval(previewPollRef.current);
+        previewPollRef.current = null;
+      }
+    };
+  }, []);
 
   // WebSocket connection for AI agent
   useEffect(() => {
@@ -250,17 +260,67 @@ export default function ProjectView() {
     try {
       const res = await api.post(`/projects/${id}/preview`);
       const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
-      const previewUrl = res.data.url;
-      
-      const fullUrl = previewUrl.startsWith('http') 
-        ? previewUrl 
-        : `${backendUrl}${previewUrl}`;
-      
-      window.open(fullUrl, "_blank", "noopener,noreferrer");
+      const { url, preview_id, status_url } = res.data || {};
+
+      if (!url || !preview_id || !status_url) {
+        setPreviewing(false);
+        setError("Failed to start preview");
+        return;
+      }
+
+      if (previewPollRef.current) {
+        clearInterval(previewPollRef.current);
+        previewPollRef.current = null;
+      }
+
+      try {
+        const buildRes = await api.post(`/projects/preview/${preview_id}/build`);
+        if (buildRes?.data?.ok === false) {
+          setPreviewing(false);
+          setError(buildRes?.data?.error || "Failed to start preview build");
+          return;
+        }
+      } catch (buildErr) {
+        setPreviewing(false);
+        setError(buildErr?.response?.data?.detail || "Failed to start preview build");
+        return;
+      }
+
+      const fullUrl = url.startsWith('http')
+        ? url
+        : `${backendUrl}${url}`;
+
+      const statusPath = status_url.replace(/^\/api/, "");
+
+      previewPollRef.current = setInterval(async () => {
+        try {
+          const st = await api.get(statusPath);
+          const status = st.data?.status;
+          const err = st.data?.error || null;
+
+          if (status === "ready") {
+            clearInterval(previewPollRef.current);
+            previewPollRef.current = null;
+            setPreviewing(false);
+            window.open(fullUrl, "_blank", "noopener,noreferrer");
+          }
+
+          if (status === "failed") {
+            clearInterval(previewPollRef.current);
+            previewPollRef.current = null;
+            setPreviewing(false);
+            setError(err || "Preview build failed");
+          }
+        } catch (pollErr) {
+          clearInterval(previewPollRef.current);
+          previewPollRef.current = null;
+          setPreviewing(false);
+          setError("Preview status check failed");
+        }
+      }, 1000);
     } catch (err) {
-      setError(err?.response?.data?.detail || "Failed to start preview");
-    } finally {
       setPreviewing(false);
+      setError(err?.response?.data?.detail || "Failed to start preview");
     }
   };
 
