@@ -71,7 +71,7 @@ export function Navbar() {
   };
 
   // ✅ Alleen jij ziet de knop
-  const showDevAssistant = isAuthenticated && isDevUser(user);
+  const showDevAssistant = isAuthenticated && (user?.is_dev || isDevUser(user));
 
   const navLinks = isAuthenticated
       ? [

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.database import get_db
 from backend.core.config import JWT_SECRET, JWT_ALGORITHM
 from backend.models.user import User
+from backend.services.dev_user_service import is_dev_user_id
 
 security = HTTPBearer(auto_error=False)
 
@@ -42,6 +43,7 @@ async def get_current_user(
             "email": user.email,
             "name": user.name,
             "created_at": user.created_at.replace(tzinfo=timezone.utc).isoformat(),
+            "is_dev": is_dev_user_id(user.id),
         }
 
     except jwt.ExpiredSignatureError:

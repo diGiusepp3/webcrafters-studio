@@ -11,6 +11,7 @@ from backend.models.user import User
 from backend.schemas.auth import UserCreate, UserLogin, TokenResponse, UserResponse
 from backend.services.auth_service import hash_password, verify_password, create_token
 from backend.api.deps import get_current_user
+from backend.services.dev_user_service import is_dev_user_id
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -41,6 +42,7 @@ async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
             email=data.email,
             name=data.name,
             created_at=user.created_at.replace(tzinfo=timezone.utc).isoformat(),
+            is_dev=is_dev_user_id(user_id),
         ),
     )
 
@@ -60,9 +62,16 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
             email=user.email,
             name=user.name,
             created_at=user.created_at.replace(tzinfo=timezone.utc).isoformat(),
+            is_dev=is_dev_user_id(user.id),
         ),
     )
 
 @router.get("/me", response_model=UserResponse)
 async def auth_me(user=Depends(get_current_user)):
-    return UserResponse(id=user["id"], email=user["email"], name=user["name"], created_at=user["created_at"])
+    return UserResponse(
+        id=user["id"],
+        email=user["email"],
+        name=user["name"],
+        created_at=user["created_at"],
+        is_dev=is_dev_user_id(user["id"]),
+    )

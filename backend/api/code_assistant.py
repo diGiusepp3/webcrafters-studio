@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from backend.services.dev_user_service import get_dev_user_ids, is_dev_user_id
+
 router = APIRouter(prefix="/api/codeassistant", tags=["codeassistant"])
 
 
@@ -23,17 +25,9 @@ FS_ROOT = Path(os.getenv("DEV_FS_ROOT", "/home/webcrafters/subdomains/studio")).
 #   DEV_USER_CODEX=git-codex
 # of:
 #   DEV_USER_IDS=uuid1,uuid2
-DEV_USER_IDS = {
-    s.strip()
-    for s in (
-            ",".join(filter(None, [
-                os.getenv("DEV_USER_IDS", ""),
-                os.getenv("DEV_USER_ID", ""),
-                os.getenv("DEV_USER_CODEX", ""),
-            ]))
-    ).split(",")
-    if s.strip()
-}
+from backend.services.dev_user_service import get_dev_user_ids, is_dev_user_id
+
+DEV_USER_IDS = get_dev_user_ids()
 
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 DEV_ASSISTANT_MODEL = os.getenv("DEV_ASSISTANT_MODEL", "gpt-4.1-mini")
@@ -115,7 +109,7 @@ def require_dev(request: Request) -> Dict[str, Any]:
     if not uid:
         raise HTTPException(status_code=403, detail="Dev-only endpoint (missing user_id claim)")
 
-    if uid not in DEV_USER_IDS:
+    if not is_dev_user_id(uid):
         raise HTTPException(status_code=403, detail="Dev-only endpoint")
 
     return claims

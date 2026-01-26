@@ -483,7 +483,7 @@ export default function Generator() {
     }
 
     const normalizedId = String(user.id);
-    if (devUserIdSet.has(normalizedId)) {
+    if (user?.is_dev || devUserIdSet.has(normalizedId)) {
       return;
     }
 

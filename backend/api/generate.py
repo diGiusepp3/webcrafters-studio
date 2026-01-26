@@ -39,6 +39,7 @@ from backend.services.agent_service import (
 )
 from backend.services.security_checker import check_project_security, apply_security_fixes
 from backend.services.fix_loop_service import run_fix_loop
+from backend.services.dev_user_service import get_dev_user_ids, is_dev_user_id
 from backend.validators.node_openai_validator import validate_node_openai
 
 # ✅ Use the robust JSON parser (same one as repair step)
@@ -518,13 +519,8 @@ async def generate_clarify(req: ClarifyRequest, user=Depends(get_current_user)):
 async def start_generation(req: GenerateRequest, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     cleanup_jobs()
 
-    dev_ids_raw = ",".join(filter(None, [
-        os.getenv("DEV_USER_IDS", ""),
-        os.getenv("DEV_USER_ID", ""),
-        os.getenv("DEV_USER_CODEX", ""),
-    ]))
-    DEV_USER_IDS = {s.strip() for s in dev_ids_raw.split(",") if s.strip()}
-    if DEV_USER_IDS and str(user["id"]) not in DEV_USER_IDS:
+    DEV_USER_IDS = get_dev_user_ids()
+    if not (DEV_USER_IDS and is_dev_user_id(user["id"])):
         async with SessionLocal() as db:
             r = await db.execute(
                 select(func.coalesce(func.sum(CreditLedger.amount_cents), 0))
