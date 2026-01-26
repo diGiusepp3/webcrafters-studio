@@ -4,6 +4,14 @@ import api, { setAuthToken } from "../api";
 
 const AuthContext = createContext(null);
 
+const isValidJwt = (value) => {
+  if (typeof value !== "string") return false;
+  const parts = value.split(".");
+  return parts.length === 3 && parts.every(Boolean);
+};
+
+const getJwtFromResponse = (data) => data?.access_token ?? data?.token ?? null;
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(() => localStorage.getItem("access_token"));
@@ -12,7 +20,10 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const checkAuth = async () => {
       const t = localStorage.getItem("access_token");
-      if (!t) {
+      if (!t || !isValidJwt(t)) {
+        if (t && !isValidJwt(t)) {
+          localStorage.removeItem("access_token");
+        }
         setUser(null);
         setToken(null);
         setAuthToken(null);
@@ -42,10 +53,12 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     const res = await api.post("/auth/login", { email, password });
 
-    const jwt = res.data?.token; // ✅ backend key = token
-    if (!jwt) throw new Error("Login response missing 'token'");
+    const jwt = getJwtFromResponse(res.data);
+    if (!isValidJwt(jwt)) {
+      throw new Error("Login response missing valid access token");
+    }
 
-    localStorage.setItem("access_token", jwt); // ✅ meteen, geen race
+    localStorage.setItem("access_token", jwt); // ✅ store only JWT
     setAuthToken(jwt);                         // ✅ axios stuurt vanaf nu altijd Bearer
     setToken(jwt);
     setUser(res.data.user);
@@ -56,8 +69,10 @@ export const AuthProvider = ({ children }) => {
   const register = async (name, email, password) => {
     const res = await api.post("/auth/register", { name, email, password });
 
-    const jwt = res.data?.token; // ✅ backend key = token
-    if (!jwt) throw new Error("Register response missing 'token'");
+    const jwt = getJwtFromResponse(res.data);
+    if (!isValidJwt(jwt)) {
+      throw new Error("Register response missing valid access token");
+    }
 
     localStorage.setItem("access_token", jwt);
     setAuthToken(jwt);

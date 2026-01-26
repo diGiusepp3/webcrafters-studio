@@ -31,8 +31,11 @@ async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.commit()
 
+    token = create_token(user_id, data.email)
+
     return TokenResponse(
-        token=create_token(user_id, data.email),  # ✅ changed
+        token=token,  # ✅ changed
+        access_token=token,
         user=UserResponse(
             id=user_id,
             email=data.email,
@@ -47,8 +50,11 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    token = create_token(user.id, user.email)
+
     return TokenResponse(
-        token=create_token(user.id, user.email),  # ✅ changed
+        token=token,  # ✅ changed
+        access_token=token,
         user=UserResponse(
             id=user.id,
             email=user.email,

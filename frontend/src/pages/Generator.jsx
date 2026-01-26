@@ -118,6 +118,11 @@ export default function Generator() {
   // Diff view
   const [showDiff, setShowDiff] = useState(false);
   const [diffData, setDiffData] = useState(null);
+  const [diffMode, setDiffMode] = useState("applied");
+  const [proposalJobId, setProposalJobId] = useState(null);
+  const [proposalSummary, setProposalSummary] = useState("");
+  const [proposalNotes, setProposalNotes] = useState([]);
+  const [applyingProposal, setApplyingProposal] = useState(false);
 
   // UI
   const [activeTab, setActiveTab] = useState('chat');
@@ -451,6 +456,12 @@ export default function Generator() {
     setChatInput("");
     setModifying(true);
     setError("");
+    setProposalJobId(null);
+    setProposalSummary("");
+    setProposalNotes([]);
+    setDiffData(null);
+    setDiffMode("applied");
+    setShowDiff(false);
 
     // Add user message
     addChatMessage(userMessage, 'user');
@@ -473,11 +484,62 @@ export default function Generator() {
     }
   };
 
+  const applyUpdatedFilesToState = (updatedFiles) => {
+    if (!updatedFiles || updatedFiles.length === 0) return;
+    setProject(prev => {
+      if (!prev) return prev;
+      const newFiles = [...(prev.files || [])];
+      let nextSelected = selectedFile;
+
+      updatedFiles.forEach(updatedFile => {
+        const action = (updatedFile.action || "modify").toLowerCase();
+        const isDelete = action === "delete" || action === "deleted";
+        const idx = newFiles.findIndex(f => f.path === updatedFile.path);
+
+        if (isDelete) {
+          if (idx >= 0) newFiles.splice(idx, 1);
+          if (nextSelected?.path === updatedFile.path) {
+            nextSelected = newFiles[0] || null;
+          }
+          return;
+        }
+
+        if (idx >= 0) {
+          newFiles[idx] = {
+            ...newFiles[idx],
+            ...updatedFile,
+            content: updatedFile.content ?? newFiles[idx].content,
+          };
+        } else {
+          newFiles.push(updatedFile);
+        }
+
+        if (nextSelected?.path === updatedFile.path) {
+          nextSelected = {
+            ...nextSelected,
+            ...updatedFile,
+            content: updatedFile.content ?? nextSelected.content,
+          };
+        }
+      });
+
+      setSelectedFile(nextSelected);
+      return { ...prev, files: newFiles };
+    });
+  };
+
   const pollModificationStatus = (jobId) => {
     const pollInterval = setInterval(async () => {
       try {
         const res = await api.get(`/projects/modify/status/${jobId}`);
-        const { status, message, updated_files, error: jobError } = res.data;
+        const {
+          status,
+          message,
+          updated_files,
+          proposal,
+          requires_confirmation,
+          error: jobError
+        } = res.data;
 
         if (status === 'running') {
           setChatMessages(prev => {
@@ -494,31 +556,33 @@ export default function Generator() {
           clearInterval(pollInterval);
           setModifying(false);
           setChatMessages(prev => prev.filter(m => m.metadata?.status !== 'thinking'));
+          if (requires_confirmation) {
+            const proposedFiles = proposal?.updated_files || updated_files || [];
+            addChatMessage(
+              `✅ ${message || 'Proposal ready. Review and apply to continue.'}`,
+              'agent',
+              'success'
+            );
+
+            if (proposedFiles.length > 0) {
+              setProposalJobId(jobId);
+              setProposalSummary(proposal?.summary || "");
+              setProposalNotes(Array.isArray(proposal?.notes) ? proposal.notes : []);
+              setDiffData(proposedFiles);
+              setDiffMode("proposal");
+              setShowDiff(true);
+            }
+            return;
+          }
+
           addChatMessage(`✅ ${message || 'Modifications applied successfully!'}`, 'agent', 'success');
 
           if (updated_files && updated_files.length > 0) {
-            // Show diff for modified files
             setDiffData(updated_files);
+            setDiffMode("applied");
             setShowDiff(true);
 
-            // Update project files
-            setProject(prev => {
-              if (!prev) return prev;
-              const newFiles = [...prev.files];
-              updated_files.forEach(updatedFile => {
-                const idx = newFiles.findIndex(f => f.path === updatedFile.path);
-                if (idx >= 0) {
-                  newFiles[idx] = { ...newFiles[idx], content: updatedFile.content };
-                } else {
-                  newFiles.push(updatedFile);
-                }
-                if (selectedFile?.path === updatedFile.path) {
-                  setSelectedFile({ ...selectedFile, content: updatedFile.content });
-                }
-              });
-              return { ...prev, files: newFiles };
-            });
-
+            applyUpdatedFilesToState(updated_files);
             setIsTyping(true);
             setTimeout(() => setIsTyping(false), 1000);
           }
@@ -546,6 +610,47 @@ export default function Generator() {
         addChatMessage('⏱️ Request timed out. Please try again.', 'agent', 'error');
       }
     }, 120000);
+  };
+
+  const handleApplyProposal = async () => {
+    if (!proposalJobId || applyingProposal) return;
+    setApplyingProposal(true);
+    setError("");
+    addChatMessage("Applying approved changes...", "agent", "thinking");
+
+    try {
+      const res = await api.post(`/projects/modify/apply/${proposalJobId}`);
+      const updatedFiles = res.data?.updated_files || [];
+
+      setChatMessages(prev => prev.filter(m => m.metadata?.status !== 'thinking'));
+      addChatMessage(
+        `✅ ${res.data?.message || 'Modifications applied successfully!'}`,
+        'agent',
+        'success'
+      );
+
+      setProposalJobId(null);
+      setProposalSummary("");
+      setProposalNotes([]);
+
+      if (updatedFiles.length > 0) {
+        setDiffData(updatedFiles);
+        setDiffMode("applied");
+        setShowDiff(true);
+        applyUpdatedFilesToState(updatedFiles);
+        setIsTyping(true);
+        setTimeout(() => setIsTyping(false), 1000);
+      }
+    } catch (err) {
+      setChatMessages(prev => prev.filter(m => m.metadata?.status !== 'thinking'));
+      addChatMessage(
+        `❌ Error: ${err?.response?.data?.detail || 'Failed to apply changes.'}`,
+        'agent',
+        'error'
+      );
+    } finally {
+      setApplyingProposal(false);
+    }
   };
 
   const handleChatKeyDown = (e) => {
@@ -1076,6 +1181,11 @@ export default function Generator() {
         {showDiff && diffData && (
           <DiffViewer
             changes={diffData}
+            mode={diffMode}
+            onApply={diffMode === 'proposal' ? handleApplyProposal : null}
+            applying={applyingProposal}
+            summary={proposalSummary}
+            notes={proposalNotes}
             onClose={() => setShowDiff(false)}
           />
         )}

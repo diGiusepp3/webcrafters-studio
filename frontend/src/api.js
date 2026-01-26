@@ -8,18 +8,29 @@ const api = axios.create({
     timeout: 120000,
 });
 
+const isValidJwt = (value) => {
+    if (typeof value !== "string") return false;
+    const parts = value.split(".");
+    return parts.length === 3 && parts.every(Boolean);
+};
+
 export function setAuthToken(jwt) {
     if (jwt) api.defaults.headers.common.Authorization = `Bearer ${jwt}`;
     else delete api.defaults.headers.common.Authorization;
 }
 
 // Zet defaults meteen bij load (page refresh)
-setAuthToken(localStorage.getItem("access_token"));
+const bootToken = localStorage.getItem("access_token");
+if (isValidJwt(bootToken)) {
+    setAuthToken(bootToken);
+} else if (bootToken) {
+    localStorage.removeItem("access_token");
+}
 
 api.interceptors.request.use((config) => {
     const token = localStorage.getItem("access_token");
     config.headers = config.headers ?? {};
-    if (token) config.headers.Authorization = `Bearer ${token}`;
+    if (isValidJwt(token)) config.headers.Authorization = `Bearer ${token}`;
     return config;
 });
 

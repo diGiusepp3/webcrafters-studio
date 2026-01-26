@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
 class UserCreate(BaseModel):
@@ -18,4 +19,5 @@ class UserResponse(BaseModel):
 
 class TokenResponse(BaseModel):
     token: str
+    access_token: Optional[str] = None
     user: UserResponse

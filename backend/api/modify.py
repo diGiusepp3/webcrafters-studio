@@ -45,6 +45,7 @@ class ModifyStatusResponse(BaseModel):
     status: str  # queued | running | done | error
     message: Optional[str] = None
     updated_files: Optional[list] = None  # proposal OR applied files
+    proposal: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     requires_confirmation: Optional[bool] = None
     applied: Optional[bool] = None
@@ -105,6 +106,7 @@ async def start_modification(
         # proposal/apply state
         "proposed_modifications": [],
         "updated_files": [],  # UI: proposal first, applied later
+        "proposal": None,
         "requires_confirmation": False,
         "applied": False,
         "error": None,
@@ -153,6 +155,7 @@ async def get_modification_status(job_id: str, user=Depends(get_current_user)):
         status=job["status"],
         message=job.get("message"),
         updated_files=job.get("updated_files"),
+        proposal=job.get("proposal"),
         error=job.get("error"),
         requires_confirmation=job.get("requires_confirmation"),
         applied=job.get("applied"),
@@ -292,6 +295,7 @@ async def run_modification_job(job_id: str):
             job["proposed_modifications"] = []
             job["requires_confirmation"] = False
             job["applied"] = False
+            job["proposal"] = None
             return
 
         # Build proposal payload for UI (Mogelijke oplossing)
@@ -301,6 +305,17 @@ async def run_modification_job(job_id: str):
             path = mod.get("path")
             if not path:
                 continue
+            explanation = mod.get("explanation") or {}
+            if not isinstance(explanation, dict):
+                explanation = {}
+            explanation = {
+                "what": explanation.get("what", ""),
+                "where": explanation.get("where", ""),
+                "why": explanation.get("why", ""),
+            }
+            change_list = mod.get("change_list")
+            if not isinstance(change_list, list):
+                change_list = []
 
             proposed_files.append(
                 {
@@ -308,12 +323,19 @@ async def run_modification_job(job_id: str):
                     "action": action,
                     "language": mod.get("language", "text"),
                     "content": mod.get("content", "") if action in ("modify", "create") else None,
+                    "explanation": explanation,
+                    "change_list": change_list,
                     "reason": mod.get("reason"),
                 }
             )
 
         job["proposed_modifications"] = modifications
         job["updated_files"] = proposed_files
+        job["proposal"] = {
+            "updated_files": proposed_files,
+            "summary": result.get("summary", ""),
+            "notes": result.get("notes") if isinstance(result.get("notes"), list) else [],
+        }
         job["status"] = "done"
         job["requires_confirmation"] = True
         job["applied"] = False
@@ -366,6 +388,18 @@ async def _apply_modifications_to_db(
             path = mod.get("path")
             content = mod.get("content", "")
             language = mod.get("language", "text")
+            explanation = mod.get("explanation") or {}
+            if not isinstance(explanation, dict):
+                explanation = {}
+            explanation = {
+                "what": explanation.get("what", ""),
+                "where": explanation.get("where", ""),
+                "why": explanation.get("why", ""),
+            }
+            change_list = mod.get("change_list")
+            if not isinstance(change_list, list):
+                change_list = []
+            reason = mod.get("reason")
 
             if not path:
                 continue
@@ -378,7 +412,14 @@ async def _apply_modifications_to_db(
                         )
                 )
                 if res.rowcount and res.rowcount > 0:
-                    updated_files.append({"path": path, "action": "deleted"})
+                    updated_files.append({
+                        "path": path,
+                        "action": "deleted",
+                        "language": language,
+                        "explanation": explanation,
+                        "change_list": change_list,
+                        "reason": reason,
+                    })
 
             elif action in ("modify", "create"):
                 res = await db.execute(
@@ -409,6 +450,9 @@ async def _apply_modifications_to_db(
                         "content": content,
                         "language": language,
                         "action": action,
+                        "explanation": explanation,
+                        "change_list": change_list,
+                        "reason": reason,
                     }
                 )
 
