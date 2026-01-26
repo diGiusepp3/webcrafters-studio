@@ -17,13 +17,38 @@ import {
 
 // ✅ Zet hier JOUW user UUID (die in je JWT/user object zit)
 // Voorbeeld uit je token: 241a8c44-669b-422f-a1c1-a89cd7faa7e9
-const DEV_USER_ID = (process.env.REACT_APP_DEV_USER_ID || "").trim();
-const DEV_USER_CODEX = (process.env.REACT_APP_DEV_USER_CODEX || "").trim();
+const DEV_USER_ENV_KEYS = [
+  "REACT_APP_DEV_USER_ID",
+  "REACT_APP_DEV_USER_CODEX",
+  "REACT_APP_DEV_USER_IDS",
+  "DEV_USER_ID",
+  "DEV_USER_CODEX",
+  "DEV_USER_IDS",
+];
+
+const buildDevUserSet = () => {
+  const tokens = new Set();
+  const splitValue = (value) =>
+    value
+      .split(/[;,]+/)
+      .map((token) => token?.trim())
+      .filter(Boolean);
+
+  DEV_USER_ENV_KEYS.forEach((key) => {
+    const raw = process.env[key];
+    if (!raw) return;
+    splitValue(raw).forEach((token) => tokens.add(token));
+  });
+
+  return tokens;
+};
+
+const DEV_USER_TOKENS = buildDevUserSet();
 
 function isDevUser(user) {
   const uid = String(user?.id || "").trim();
   if (!uid) return false;
-  return uid === DEV_USER_ID || uid === DEV_USER_CODEX;
+  return DEV_USER_TOKENS.has(uid);
 }
 
 
