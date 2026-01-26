@@ -70,3 +70,16 @@ class GitHubSyncResponse(BaseModel):
     files_updated: int = 0
     warnings: List[str] = []
     has_local_changes: bool = False
+
+
+class GitHubRefreshFileUpdate(BaseModel):
+    path: str
+    action: str
+
+
+class GitHubRefreshResponse(BaseModel):
+    success: bool
+    status: str  # ok | error
+    message: str
+    updated_files: List[GitHubRefreshFileUpdate] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)

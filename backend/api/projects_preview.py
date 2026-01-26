@@ -7,6 +7,7 @@ Project Preview API
 - GET  /api/projects/preview/{preview_id}/... -> serve built/static files
 """
 
+import json
 import mimetypes
 from pathlib import Path
 
@@ -20,10 +21,12 @@ from backend.core.database import get_db
 from backend.models.project import Project
 from backend.models.project_file import ProjectFile
 from backend.services.preview_service import (
+    META_FILE,
     PREVIEW_ROOT,
     PreviewError,
     get_preview_serve_root,
     read_status,
+    start_build,
     start_preview_job,
     tail_logs,
 )
@@ -78,10 +81,60 @@ async def preview_project(
         "preview_id": result["preview_id"],
         "status_url": result["status_url"],
         "log_url": result["log_url"],
+        "build_url": result["build_url"],
         "project_type": project.project_type,
         "detected_type": result["detected_type"],
         "file_count": len(files),
     }
+
+
+@router.post("/preview/{preview_id}/build")
+async def preview_build(
+        preview_id: str,
+        user=Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+):
+    preview_dir = PREVIEW_ROOT / preview_id
+    meta_path = preview_dir / META_FILE
+
+    if not meta_path.exists():
+        raise HTTPException(status_code=404, detail="Preview not found")
+
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Preview metadata invalid")
+
+    project_id = meta.get("project_id")
+    if not project_id:
+        raise HTTPException(status_code=400, detail="Preview metadata missing project")
+
+    project = (
+        await db.execute(
+            select(Project).where(
+                Project.id == project_id,
+                Project.user_id == user["id"],
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Preview not found")
+
+    files = (
+        await db.execute(select(ProjectFile).where(ProjectFile.project_id == project_id))
+    ).scalars().all()
+
+    if not files:
+        raise HTTPException(status_code=400, detail="No files to preview")
+
+    file_list = [{"path": f.path, "content": f.content} for f in files]
+    result = start_build(preview_id, file_list)
+
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to start build"))
+
+    return result
 
 
 @router.get("/preview/{preview_id}/status")
