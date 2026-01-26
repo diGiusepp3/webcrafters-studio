@@ -1,15 +1,16 @@
-# /backend/api/modify.py
+# FILE: backend/api/modify.py
 # API endpoints for project modifications
 
 import time
 import uuid
+import traceback
 from typing import Dict, Any, Optional
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.sqltypes import String as SAString, Text as SAText
 
 from backend.api.deps import get_current_user
 from backend.core.database import get_db, SessionLocal
@@ -41,32 +42,38 @@ class ModifyStatusResponse(BaseModel):
 
 @router.post("/projects/{project_id}/modify", response_model=ModifyResponse)
 async def start_modification(
-    project_id: str,
-    request: ModifyRequest,
-    background_tasks: BackgroundTasks,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+        project_id: str,
+        request: ModifyRequest,
+        background_tasks: BackgroundTasks,
+        user=Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
 ):
     """Start a modification job for a project."""
-    
+
     # Verify project exists and belongs to user
-    project = (await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == user["id"])
-    )).scalar_one_or_none()
-    
+    project = (
+        await db.execute(
+            select(Project).where(Project.id == project_id, Project.user_id == user["id"])
+        )
+    ).scalar_one_or_none()
+
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Get current files
-    files = (await db.execute(
-        select(ProjectFile).where(ProjectFile.project_id == project_id)
-    )).scalars().all()
-    
+
+    # IMPORTANT: only fetch the columns we need (avoid loading huge ProjectFile.id)
+    rows = (
+        await db.execute(
+            select(ProjectFile.path, ProjectFile.content, ProjectFile.language).where(
+                ProjectFile.project_id == project_id
+            )
+        )
+    ).all()
+
     current_files = [
-        {"path": f.path, "content": f.content, "language": f.language or "text"}
-        for f in files
+        {"path": path, "content": content, "language": (language or "text")}
+        for (path, content, language) in rows
     ]
-    
+
     # Create job
     job_id = str(uuid.uuid4())
     MODIFY_JOBS[job_id] = {
@@ -81,148 +88,148 @@ async def start_modification(
         "project_name": project.name,
         "updated_files": [],
         "error": None,
-        "created_at": time.time()
+        "created_at": time.time(),
     }
-    
+
     # Start background task
     background_tasks.add_task(run_modification_job, job_id)
-    
+
     return ModifyResponse(job_id=job_id)
 
 
 @router.get("/projects/modify/status/{job_id}", response_model=ModifyStatusResponse)
-async def get_modification_status(
-    job_id: str,
-    user=Depends(get_current_user)
-):
+async def get_modification_status(job_id: str, user=Depends(get_current_user)):
     """Get the status of a modification job."""
-    
+
     job = MODIFY_JOBS.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    
+
     if job["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Not authorized")
-    
+
     return ModifyStatusResponse(
         status=job["status"],
         message=job.get("message"),
         updated_files=job.get("updated_files"),
-        error=job.get("error")
+        error=job.get("error"),
     )
 
 
 async def run_modification_job(job_id: str):
     """Background task to run the modification."""
-    
+
     job = MODIFY_JOBS.get(job_id)
     if not job:
         return
-    
+
     try:
-        # Update status
         job["status"] = "running"
         job["message"] = "Analyzing your request..."
-        
+
         # Call AI service
         result = await apply_modifications(
             instruction=job["instruction"],
             current_files=job["current_files"],
             project_type=job["project_type"],
-            context=job["context"]
+            context=job["context"],
         )
-        
-        # Check for errors
+
         if "error" in result:
             job["status"] = "error"
             job["error"] = result["error"]
             job["message"] = result.get("error", "Modification failed")
             return
-        
-        # Apply modifications to database
+
         modifications = result.get("modifications", [])
         if not modifications:
             job["status"] = "done"
             job["message"] = "No changes needed"
             job["updated_files"] = []
             return
-        
+
         job["message"] = f"Applying {len(modifications)} changes..."
-        
-        # Update files in database
+
+        # Apply modifications to database WITHOUT loading ORM rows (avoid huge id conversion)
         async with SessionLocal() as db:
             updated_files = []
-            
+
+            id_col_type = ProjectFile.__table__.c.id.type if "id" in ProjectFile.__table__.c else None
+            id_is_text = isinstance(id_col_type, (SAString, SAText))
+
             for mod in modifications:
-                action = mod.get("action", "modify")
+                action = (mod.get("action") or "modify").lower()
                 path = mod.get("path")
                 content = mod.get("content", "")
                 language = mod.get("language", "text")
-                
+
                 if not path:
                     continue
-                
+
                 if action == "delete":
-                    # Delete file
-                    existing = (await db.execute(
-                        select(ProjectFile).where(
+                    res = await db.execute(
+                        delete(ProjectFile).where(
                             ProjectFile.project_id == job["project_id"],
-                            ProjectFile.path == path
-                        )
-                    )).scalar_one_or_none()
-                    
-                    if existing:
-                        await db.delete(existing)
+                            ProjectFile.path == path,
+                            )
+                    )
+                    if res.rowcount and res.rowcount > 0:
                         updated_files.append({"path": path, "action": "deleted"})
-                
-                elif action in ["modify", "create"]:
-                    # Check if file exists
-                    existing = (await db.execute(
-                        select(ProjectFile).where(
+
+                elif action in ("modify", "create"):
+                    res = await db.execute(
+                        update(ProjectFile)
+                        .where(
                             ProjectFile.project_id == job["project_id"],
-                            ProjectFile.path == path
-                        )
-                    )).scalar_one_or_none()
-                    
-                    if existing:
-                        # Update existing file
-                        existing.content = content
-                        existing.language = language
-                        db.add(existing)
-                    else:
-                        # Create new file
-                        new_file = ProjectFile(
-                            id=str(uuid.uuid4()),
-                            project_id=job["project_id"],
-                            path=path,
-                            content=content,
-                            language=language
-                        )
-                        db.add(new_file)
-                    
-                    updated_files.append({
-                        "path": path,
-                        "content": content,
-                        "language": language,
-                        "action": action
-                    })
-            
+                            ProjectFile.path == path,
+                            )
+                        .values(content=content, language=language)
+                    )
+
+                    if not res.rowcount:
+                        # Insert without selecting existing row (still avoids touching huge ids)
+                        kwargs = {
+                            "project_id": job["project_id"],
+                            "path": path,
+                            "content": content,
+                            "language": language,
+                        }
+                        # If id column is text-based UUID, set it. If it's autoinc int, leave it out.
+                        if id_is_text:
+                            kwargs["id"] = str(uuid.uuid4())
+
+                        db.add(ProjectFile(**kwargs))
+
+                    updated_files.append(
+                        {
+                            "path": path,
+                            "content": content,
+                            "language": language,
+                            "action": action,
+                        }
+                    )
+
             await db.commit()
-        
+
         job["status"] = "done"
-        job["message"] = result.get("summary", f"Successfully applied {len(updated_files)} modifications")
+        job["message"] = result.get(
+            "summary", f"Successfully applied {len(updated_files)} modifications"
+        )
         job["updated_files"] = updated_files
-        
+
     except Exception as e:
+        tb = traceback.format_exc()
         job["status"] = "error"
-        job["error"] = str(e)
+        job["error"] = tb
         job["message"] = f"Modification failed: {str(e)}"
-    
+        print(tb)  # komt in journalctl
+
     finally:
         # Cleanup old jobs (older than 1 hour)
         current_time = time.time()
         expired_jobs = [
-            jid for jid, j in MODIFY_JOBS.items()
+            jid
+            for jid, j in MODIFY_JOBS.items()
             if current_time - j.get("created_at", 0) > 3600
         ]
         for jid in expired_jobs:

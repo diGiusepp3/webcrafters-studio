@@ -5,7 +5,7 @@ import sys
 import json
 from datetime import datetime
 
-class CodeForgeAPITester:
+class WebcraftersApiTester:
     def __init__(self, base_url="https://studio.webcrafters.be/api"):
         self.base_url = base_url
         self.token = None
@@ -467,7 +467,7 @@ def main():
     print("🚀 Starting CodeForge API Tests")
     print("=" * 50)
     
-    tester = CodeForgeAPITester()
+    tester = WebcraftersApiTester()
     
     # Test sequence
     tests = [
