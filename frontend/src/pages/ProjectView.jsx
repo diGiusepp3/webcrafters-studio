@@ -38,6 +38,7 @@ export default function ProjectView() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // AI Agent state
   const [wsConnected, setWsConnected] = useState(false);
@@ -197,6 +198,21 @@ export default function ProjectView() {
     setAgentMessage("");
   };
 
+  const reloadProjectFiles = async () => {
+    const response = await api.get(`/projects/${id}`);
+    const refreshed = response.data;
+    setProject(refreshed);
+
+    if (refreshed?.files?.length) {
+      const currentPath = selectedFile?.path;
+      const nextFile =
+        refreshed.files.find((f) => f.path === currentPath) || refreshed.files[0];
+      setSelectedFile(nextFile);
+    } else {
+      setSelectedFile(null);
+    }
+  };
+
   const handleDownload = async () => {
     if (!project) return;
     setDownloading(true);
@@ -245,6 +261,28 @@ export default function ProjectView() {
       setError(err?.response?.data?.detail || "Failed to start preview");
     } finally {
       setPreviewing(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (!project) return;
+
+    setRefreshing(true);
+    setError("");
+
+    try {
+      const res = await api.post(`/projects/${id}/github/refresh`);
+      if (!res?.data?.success) {
+        setError(res?.data?.message || "GitHub refresh failed");
+        return;
+      }
+      await reloadProjectFiles();
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      const message = err?.response?.data?.message;
+      setError(detail || message || "Failed to refresh from GitHub");
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -338,6 +376,21 @@ export default function ProjectView() {
                       Preview
                     </Button>
                 )}
+
+                <Button
+                  variant="outline"
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+                  data-testid="refresh-github-button"
+                >
+                  {refreshing ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                  )}
+                  Refresh GitHub
+                </Button>
 
                 <Button 
                   onClick={handleDownload} 
