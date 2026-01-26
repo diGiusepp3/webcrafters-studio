@@ -96,6 +96,9 @@ export default function Generator() {
   const [timeline, setTimeline] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
   const [securityFindings, setSecurityFindings] = useState([]);
+  const [securityStats, setSecurityStats] = useState(null);
+  const [securityScanning, setSecurityScanning] = useState(false);
+  const [securityScanRan, setSecurityScanRan] = useState(false);
   const [currentJobId, setCurrentJobId] = useState(null);
 
   // Chat input for modifications
@@ -250,6 +253,8 @@ export default function Generator() {
     setTimeline([]);
     setChatMessages([]);
     setSecurityFindings([]);
+    setSecurityStats(null);
+    setSecurityScanRan(false);
     setPreviewUrl(null);
     setProgress(0);
     setGeneratedFiles([]);
@@ -320,7 +325,10 @@ export default function Generator() {
         }
 
         // Security findings
-        if (jobSecurityFindings) setSecurityFindings(jobSecurityFindings);
+        if (jobSecurityFindings) {
+          setSecurityFindings(jobSecurityFindings);
+          setSecurityScanRan(true);
+        }
         if (preview_url) setPreviewUrl(preview_url);
 
         // Live file updates - show files as they're generated
@@ -932,6 +940,30 @@ export default function Generator() {
     }
   };
 
+  const handleSecurityScan = async () => {
+    const targetId = project?.id || projectId;
+    if (!targetId) {
+      setError("Save or load a project before running a security scan.");
+      return;
+    }
+
+    if (securityScanning) return;
+
+    setSecurityScanning(true);
+    setError("");
+    try {
+      const res = await api.post(`/projects/${targetId}/security/scan`);
+      const payload = res?.data || {};
+      setSecurityFindings(payload.findings || []);
+      setSecurityStats(payload.stats || null);
+      setSecurityScanRan(true);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Security scan failed.");
+    } finally {
+      setSecurityScanning(false);
+    }
+  };
+
   const getEditorValue = () => {
     if (!selectedFile) return "";
     const hasDraft = Object.prototype.hasOwnProperty.call(editorDrafts, selectedFile.path);
@@ -1238,7 +1270,31 @@ export default function Generator() {
               </TabsContent>
 
               <TabsContent value="security" className="flex-1 overflow-y-auto mt-0">
-                <SecurityFindings findings={securityFindings} />
+                <div className="flex flex-1 flex-col gap-3 px-3 py-2">
+                  <div className="rounded-2xl border border-white/5 bg-gradient-to-br from-[#050910] to-[#03060c] p-4 space-y-3">
+                    <div className="text-xs text-gray-400">
+                      {securityStats
+                        ? `High: ${securityStats.high_severity || 0} • Medium: ${securityStats.medium_severity || 0} • Low: ${securityStats.low_severity || 0}`
+                        : "Run a scan to check for security issues."
+                      }
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSecurityScan}
+                      disabled={securityScanning || !(project?.id || projectId)}
+                      className="glass-card border-cyan-500/30 !justify-center gap-2 text-xs text-cyan-300 hover:bg-cyan-500/10"
+                    >
+                      {securityScanning ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Shield className="w-4 h-4 text-cyan-400" />
+                      )}
+                      {securityScanning ? "Scanning..." : "Run security scan"}
+                    </Button>
+                  </div>
+                  <SecurityFindings findings={securityFindings} />
+                </div>
               </TabsContent>
 
               <TabsContent value="info" className="flex-1 overflow-y-auto mt-0 p-4">
