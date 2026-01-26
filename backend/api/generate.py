@@ -46,6 +46,7 @@ from backend.repair.ai_repair import _parse_ai_json as parse_ai_json, AIJSONErro
 
 # Preview service (build + status/log polling)
 from backend.services.preview_service import start_preview_job, read_status, tail_logs
+from backend.services.agent_event_service import append_event, list_events
 
 router = APIRouter(prefix="/api", tags=["generate"])
 
@@ -73,6 +74,13 @@ def _now_iso() -> str:
     return datetime.utcnow().isoformat()
 
 
+def _emit_event(job_id: str, payload: Dict[str, Any]) -> None:
+    job = JOB_STATUS.get(job_id)
+    if not job:
+        return
+    append_event(job, payload)
+    job["updated_at"] = _now_ts()
+
 def init_job_state(job_id: str, payload: Dict[str, Any], user_id: str) -> Dict[str, Any]:
     return {
         "job_id": job_id,
@@ -88,6 +96,10 @@ def init_job_state(job_id: str, payload: Dict[str, Any], user_id: str) -> Dict[s
         # Timeline and chat
         "timeline": [],
         "chat_messages": [],
+
+        # Agent events
+        "events": [],
+        "event_seq": 0,
 
         # Preview & reporting
         "preview_url": None,
@@ -153,6 +165,14 @@ def set_status(job_id: str, status: str, step: str, message: Optional[str] = Non
 
     job["timeline"] = timeline
 
+    if status == "running" and step == "preflight":
+        _emit_event(job_id, {
+            "type": "plan",
+            "title": "Preflight plan",
+            "detail": message or "Analyzing prompt",
+            "rationale": "Establish a plan before code generation",
+        })
+
     # chat messages
     chat_status = "running" if status == "running" else ("success" if status == "done" else "error")
     messages = generate_step_chat_messages(step, chat_status, ctx)
@@ -184,6 +204,35 @@ def mark_step_complete(job_id: str, step: str, success: bool = True, context: Op
                 entry["duration_ms"] = int((datetime.utcnow() - start).total_seconds() * 1000)
             break
     job["timeline"] = timeline
+
+    if step == "validating" and success:
+        _emit_event(job_id, {
+            "type": "verify",
+            "title": "Validate output",
+            "detail": "Validated generated files for schema and structure",
+            "rationale": "Ensure generated output meets build requirements",
+            "result": {
+                "validation_errors": int(ctx.get("validation_errors", 0) or 0),
+            },
+        })
+
+    if step == "security_check" and success:
+        findings = ctx.get("security_findings") or []
+        high_count = len([f for f in findings if f.get("severity") == "high"])
+        medium_count = len([f for f in findings if f.get("severity") == "medium"])
+        scan_severity = "high" if high_count else ("medium" if medium_count else "low")
+        _emit_event(job_id, {
+            "type": "security_scan",
+            "title": "Security scan",
+            "detail": "Scanned generated files for security issues",
+            "rationale": "Identify vulnerabilities before saving the project",
+            "severity": scan_severity,
+            "result": {
+                "total": len(findings),
+                "high": high_count,
+                "medium": medium_count,
+            },
+        })
 
     chat_status = "success" if success else "error"
     messages = generate_step_chat_messages(step, chat_status, ctx)
@@ -247,6 +296,17 @@ def set_building_message(job_id: str, phase: str, attempt: Optional[int] = None,
     msg = f"{label}{suffix}… This can take a while."
     set_status(job_id, "running", "preview_build", msg)
     add_chat_message(job_id, f"🧪 {msg}")
+    if phase == "build":
+        _emit_event(job_id, {
+            "type": "preview_build",
+            "title": "Preview build",
+            "detail": f"Starting preview build attempt {attempt or 1}",
+            "rationale": "Build the project output for runtime verification",
+            "result": {
+                "attempt": int(attempt or 1),
+                "max_attempts": int(max_attempts or 1),
+            },
+        })
 
 
 def _set_live_logs(job_id: str, text: str):
@@ -568,6 +628,26 @@ async def get_generation_status(job_id: str, user=Depends(get_current_user)):
         "updated_at": job.get("updated_at"),
     }
 
+
+@router.get("/generate/events/{job_id}")
+async def get_generation_events(
+    job_id: str,
+    after: Optional[str] = None,
+    wait_ms: Optional[int] = None,
+    user=Depends(get_current_user),
+):
+    job = JOB_STATUS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    wait_ms = max(0, min(int(wait_ms or 0), 30000))
+    deadline = _now_ts() + (wait_ms / 1000.0 if wait_ms else 0)
+
+    while True:
+        events, cursor = list_events(job, after)
+        if events or wait_ms <= 0 or _now_ts() >= deadline:
+            return {"events": events, "next_cursor": cursor}
+        await asyncio.sleep(0.25)
 
 @router.post("/generate/continue/{job_id}")
 async def continue_generation(job_id: str, answers: Dict[str, Any], background_tasks: BackgroundTasks, user=Depends(get_current_user)):

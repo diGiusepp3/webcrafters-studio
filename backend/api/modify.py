@@ -2,6 +2,7 @@
 # API endpoints for project modifications (PROPOSE first, APPLY on confirm)
 
 import time
+import asyncio
 import uuid
 import traceback
 from typing import Dict, Any, Optional, List
@@ -17,12 +18,19 @@ from backend.core.database import get_db, SessionLocal
 from backend.models.project import Project
 from backend.models.project_file import ProjectFile
 from backend.services.modify_service import apply_modifications
+from backend.services.agent_event_service import append_event, list_events
 
 router = APIRouter(prefix="/api", tags=["modify"])
 
 # In-memory job state for modifications
 MODIFY_JOBS: Dict[str, Dict[str, Any]] = {}
 
+
+def _emit_modify_event(job_id: str, payload: Dict[str, Any]) -> None:
+    job = MODIFY_JOBS.get(job_id)
+    if not job:
+        return
+    append_event(job, payload)
 
 class ModifyRequest(BaseModel):
     instruction: str
@@ -100,9 +108,31 @@ async def start_modification(
         "requires_confirmation": False,
         "applied": False,
         "error": None,
+        "events": [],
+        "event_seq": 0,
         "created_at": time.time(),
     }
 
+    file_paths = [f["path"] for f in current_files]
+    _emit_modify_event(job_id, {
+        "type": "repo_search",
+        "title": "Scan project files",
+        "detail": "Loaded project files for modification context",
+        "rationale": "Build file inventory before proposing changes",
+        "result": {
+            "file_count": len(file_paths),
+        },
+    })
+    _emit_modify_event(job_id, {
+        "type": "file_read",
+        "title": "Read file context",
+        "detail": "Read file contents for modification context",
+        "files_read": file_paths[:20],
+        "rationale": "Provide the model with current file contents",
+        "result": {
+            "files_read": min(len(file_paths), 20),
+        },
+    })
     # Start background task
     background_tasks.add_task(run_modification_job, job_id)
 
@@ -128,6 +158,29 @@ async def get_modification_status(job_id: str, user=Depends(get_current_user)):
         applied=job.get("applied"),
     )
 
+
+@router.get("/projects/modify/events/{job_id}")
+async def get_modification_events(
+    job_id: str,
+    after: Optional[str] = None,
+    wait_ms: Optional[int] = None,
+    user=Depends(get_current_user),
+):
+    job = MODIFY_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    wait_ms = max(0, min(int(wait_ms or 0), 30000))
+    deadline = time.time() + (wait_ms / 1000.0 if wait_ms else 0)
+
+    while True:
+        events, cursor = list_events(job, after)
+        if events or wait_ms <= 0 or time.time() >= deadline:
+            return {"events": events, "next_cursor": cursor}
+        await asyncio.sleep(0.25)
 
 @router.post("/projects/modify/apply/{job_id}", response_model=ApplyResponse)
 async def apply_modification_job(job_id: str, user=Depends(get_current_user)):
@@ -167,6 +220,27 @@ async def apply_modification_job(job_id: str, user=Depends(get_current_user)):
             project_id=job["project_id"],
             modifications=modifications,
         )
+
+        file_paths = [f.get("path") for f in updated_files or []]
+        _emit_modify_event(job_id, {
+            "type": "apply_patch",
+            "title": "Apply changes",
+            "detail": f"Applied {len(file_paths)} file updates",
+            "files_changed": file_paths,
+            "rationale": "Persist approved modifications to the project",
+            "result": {
+                "file_count": len(file_paths),
+            },
+        })
+        _emit_modify_event(job_id, {
+            "type": "verify",
+            "title": "Post-apply verification",
+            "detail": "Database updates completed",
+            "rationale": "Confirm changes were saved",
+            "result": {
+                "file_count": len(file_paths),
+            },
+        })
 
         job["status"] = "done"
         job["applied"] = True
@@ -248,6 +322,23 @@ async def run_modification_job(job_id: str):
             f"Mogelijke oplossing klaar ({len(proposed_files)} wijzigingen). Bevestig om toe te passen.",
         )
 
+        file_paths = [p.get("path") for p in proposed_files]
+        _emit_modify_event(job_id, {
+            "type": "propose_patch",
+            "title": "Proposed changes",
+            "detail": f"Prepared {len(file_paths)} file updates",
+            "files_changed": file_paths,
+            "rationale": "Present proposed edits for approval",
+            "result": {
+                "file_count": len(file_paths),
+            },
+        })
+        _emit_modify_event(job_id, {
+            "type": "needs_approval",
+            "title": "Approval required",
+            "detail": "Waiting for user approval to apply changes",
+            "rationale": "Avoid writing changes without explicit confirmation",
+        })
     except Exception as e:
         tb = traceback.format_exc()
         job["status"] = "error"
