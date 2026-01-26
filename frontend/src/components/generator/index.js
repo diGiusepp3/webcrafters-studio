@@ -5,4 +5,5 @@ export { PreviewSidebar } from './PreviewSidebar';
 export { PromptSuggestions } from './PromptSuggestions';
 export { TemplateSelector } from './TemplateSelector';
 export { AgentTimelinePanel } from './AgentTimelinePanel';
+export { AgentEventStream } from './AgentEventStream';
 export { DiffViewer } from './DiffViewer';

@@ -17,6 +17,7 @@ import { ClarifyDialog } from "@/components/generator/ClarifyDialog";
 import { PromptSuggestions } from "@/components/generator/PromptSuggestions";
 import { TemplateSelector } from "@/components/generator/TemplateSelector";
 import { AgentTimelinePanel } from "@/components/generator/AgentTimelinePanel";
+import { AgentEventStream } from "@/components/generator/AgentEventStream";
 import { DiffViewer } from "@/components/generator/DiffViewer";
 import { useAuth } from "@/context/AuthContext";
 
@@ -99,6 +100,9 @@ export default function Generator() {
   const [securityStats, setSecurityStats] = useState(null);
   const [securityScanning, setSecurityScanning] = useState(false);
   const [securityScanRan, setSecurityScanRan] = useState(false);
+  const [agentEvents, setAgentEvents] = useState([]);
+  const eventPollingActiveRef = useRef(false);
+  const eventCursorRef = useRef(null);
   const [currentJobId, setCurrentJobId] = useState(null);
 
   // Chat input for modifications
@@ -190,6 +194,7 @@ export default function Generator() {
     const poll = pollRef.current;
     return () => {
       if (poll) clearInterval(poll);
+      stopEventPolling();
     };
   }, []);
 
@@ -255,11 +260,55 @@ export default function Generator() {
     setSecurityFindings([]);
     setSecurityStats(null);
     setSecurityScanRan(false);
+    resetAgentEvents();
     setPreviewUrl(null);
     setProgress(0);
     setGeneratedFiles([]);
     setLiveFileContent({});
     setSelectedFile(null);
+  };
+
+  const stopEventPolling = () => {
+    eventPollingActiveRef.current = false;
+  };
+
+  const resetAgentEvents = () => {
+    stopEventPolling();
+    eventCursorRef.current = null;
+    setAgentEvents([]);
+  };
+
+  const pollAgentEvents = async (jobId) => {
+    if (!jobId) return;
+    while (eventPollingActiveRef.current) {
+      try {
+        const params = { wait_ms: 10000 };
+        if (eventCursorRef.current) {
+          params.after = eventCursorRef.current;
+        }
+        const res = await api.get(`/generate/events/${jobId}`, { params });
+        if (!eventPollingActiveRef.current) break;
+        const newEvents = res?.data?.events || [];
+        if (newEvents.length) {
+          const lastId = newEvents[newEvents.length - 1]?.id;
+          eventCursorRef.current = res?.data?.next_cursor || lastId;
+          setAgentEvents((prev) => {
+            const merged = [...prev, ...newEvents];
+            return merged.slice(-40);
+          });
+        }
+      } catch (err) {
+        if (!eventPollingActiveRef.current) break;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+  };
+
+  const startEventPolling = (jobId) => {
+    if (!jobId) return;
+    stopEventPolling();
+    eventPollingActiveRef.current = true;
+    void pollAgentEvents(jobId);
   };
 
   const addChatMessage = (message, role = 'agent', status = null) => {
@@ -291,6 +340,7 @@ export default function Generator() {
 
   const startPolling = (jobId) => {
     setCurrentJobId(jobId);
+    startEventPolling(jobId);
     let lastStep = '';
     let lastFilesCount = 0;
 
@@ -364,6 +414,7 @@ export default function Generator() {
 
         // Handle clarification
         if (status === "clarify") {
+          stopEventPolling();
           clearInterval(pollRef.current);
           setLoading(false);
           setClarifyJobId(jobId);
@@ -377,6 +428,7 @@ export default function Generator() {
         }
 
         if (status === "done") {
+          stopEventPolling();
           clearInterval(pollRef.current);
           setProgress(100);
           setIsTyping(false);
@@ -385,6 +437,7 @@ export default function Generator() {
         }
 
         if (status === "error") {
+          stopEventPolling();
           clearInterval(pollRef.current);
           setLoading(false);
           setStatusText("");
@@ -393,6 +446,7 @@ export default function Generator() {
         }
       } catch (e) {
         clearInterval(pollRef.current);
+        stopEventPolling();
         setLoading(false);
         setStatusText("");
         setError("Connection lost. Please try again.");
@@ -1492,6 +1546,18 @@ export default function Generator() {
                 Agent Timeline
               </h3>
               <AgentTimelinePanel steps={timeline} progressSteps={progressSteps} />
+            </div>
+
+            {/* Agent Events */}
+            <div className="px-4 py-3 border-b border-white/5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-white flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-cyan-400" />
+                  Agent Events
+                </span>
+                <span className="text-xs text-gray-500">{agentEvents.length} recorded</span>
+              </div>
+              <AgentEventStream events={agentEvents} />
             </div>
 
             {/* Agent Chat */}
