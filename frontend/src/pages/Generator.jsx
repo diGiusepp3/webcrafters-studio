@@ -100,6 +100,27 @@ export default function Generator() {
   const [securityStats, setSecurityStats] = useState(null);
   const [securityScanning, setSecurityScanning] = useState(false);
   const [securityScanRan, setSecurityScanRan] = useState(false);
+  const devUserIdSet = useMemo(() => {
+    const entries = [
+      process.env.REACT_APP_DEV_USER_ID,
+      process.env.REACT_APP_DEV_USER_CODEX,
+      process.env.REACT_APP_DEV_USER_IDS,
+      process.env.DEV_USER_ID,
+      process.env.DEV_USER_CODEX,
+      process.env.DEV_USER_IDS,
+    ];
+    const normalized = new Set();
+    const addTokens = (value) => {
+      if (!value) return;
+      value
+        .split(/[;,]+/)
+        .map((token) => token?.trim())
+        .filter(Boolean)
+        .forEach((token) => normalized.add(token));
+    };
+    entries.forEach(addTokens);
+    return normalized;
+  }, []);
   const [agentEvents, setAgentEvents] = useState([]);
   const eventPollingActiveRef = useRef(false);
   const eventCursorRef = useRef(null);
@@ -456,16 +477,13 @@ export default function Generator() {
 
   // ===== HARD CREDIT CHECK =====
   const ensureCanGenerate = async () => {
-    const DEV_USER_ID = process.env.REACT_APP_DEV_USER_ID;
-    const DEV_USER_CODEX = process.env.REACT_APP_DEV_USER_CODEX;
-
     if (!user?.id) {
       navigate("/login");
       throw new Error("Not authenticated");
     }
 
-    // DEV bypass
-    if (String(user.id) === String(DEV_USER_ID) || String(user.id) === String(DEV_USER_CODEX)) {
+    const normalizedId = String(user.id);
+    if (devUserIdSet.has(normalizedId)) {
       return;
     }
 
