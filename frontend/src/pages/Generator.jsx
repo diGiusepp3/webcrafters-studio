@@ -184,6 +184,7 @@ export default function Generator() {
   const previewRetryRef = useRef({ attempts: 0, max: 3, pending: false });
   const previewFixAttemptsRef = useRef(0);
   const lastAgentStepRef = useRef("");
+  const pollRetryRef = useRef(0);
 
   // Progress steps
   const progressSteps = useMemo(() => [
@@ -513,6 +514,8 @@ export default function Generator() {
           setProgress((completedSteps / progressSteps.length) * 100);
         }
 
+        pollRetryRef.current = 0;
+
         // Update chat messages from server
         if (jobChatMessages && jobChatMessages.length > 0) {
           setChatMessages(jobChatMessages.map(m => ({
@@ -602,11 +605,18 @@ export default function Generator() {
           setError(typeof jobError === "string" ? jobError : JSON.stringify(jobError, null, 2));
         }
       } catch (e) {
+        pollRetryRef.current += 1;
+        if (pollRetryRef.current <= 3) {
+          setStatusText("Connection interrupted; retrying...");
+          return;
+        }
+        console.error("Generation poll failed", e);
         clearInterval(pollRef.current);
         stopEventPolling();
         setLoading(false);
         setStatusText("");
-        setError("Connection lost. Please try again.");
+        const detail = e?.response?.data?.detail || e?.message || "Connection lost. Please try again.";
+        setError(detail);
       }
     }, 1500);
   };
