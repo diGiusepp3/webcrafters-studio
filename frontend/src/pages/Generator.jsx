@@ -215,7 +215,12 @@ export default function Generator() {
   useEffect(() => {
     if (!autoScrollChat) return;
     if (!loading && activeTab !== 'chat') return;
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const container = chatScrollRef.current;
+    if (!container) return;
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: 'smooth',
+    });
   }, [chatMessages, autoScrollChat, activeTab, loading]);
 
   // ==========================================
@@ -627,6 +632,8 @@ export default function Generator() {
     try {
       await api.post(`/generate/plan/${currentJobId}/confirm`);
       setPlanConfirmed(true);
+      setStatusText("Plan confirmed. Generating…");
+      addChatMessage("✅ Plan confirmed. Code agent starting…", "agent", "success");
     } catch (err) {
       setError("Unable to confirm the plan. Please try again.");
     } finally {
@@ -706,7 +713,6 @@ export default function Generator() {
         project_type: projectType,
       });
 
-      addChatMessage(`✨ Starting code generation for your ${projectType} project. This may take a moment...`, 'agent');
       startPolling(res.data.job_id);
     } catch (e) {
       setLoading(false);
