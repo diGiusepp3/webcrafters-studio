@@ -18,6 +18,16 @@ STEP_DESCRIPTIONS = {
         "description": "Understanding your requirements and planning the project structure",
         "icon": "search"
     },
+    "reasoning": {
+        "title": "Reasoning Agent",
+        "description": "Drafting the PRD, problem statement, and design guardrails",
+        "icon": "brain"
+    },
+    "plan_review": {
+        "title": "Plan Review",
+        "description": "Awaiting confirmation to proceed with coding",
+        "icon": "clipboard-list"
+    },
     "clarifying": {
         "title": "Clarifying Intent",
         "description": "Gathering additional details to ensure accurate generation",
@@ -73,6 +83,11 @@ STEP_DESCRIPTIONS = {
         "description": "Persisting your project to the database",
         "icon": "save"
     },
+    "final_review": {
+        "title": "Final Review",
+        "description": "Final reasoning review before release",
+        "icon": "shield-check"
+    },
     "done": {
         "title": "Complete",
         "description": "Your project is ready!",
@@ -89,6 +104,8 @@ STEP_DESCRIPTIONS = {
 ALL_STEPS = [
     "queued",
     "preflight",
+    "reasoning",
+    "plan_review",
     "generating",
     "patching",
     "validating",
@@ -99,6 +116,7 @@ ALL_STEPS = [
     "testing",
     "fixing",
     "saving",
+    "final_review",
     "done"
 ]
 
@@ -152,6 +170,14 @@ def generate_step_chat_messages(step: str, status: str, context: Optional[Dict[s
         elif step == "security_check":
             messages.append(create_chat_message(
                 "🛡️ Running security analysis to detect potential vulnerabilities..."
+            ))
+        elif step == "reasoning":
+            messages.append(create_chat_message(
+                "🧠 Reasoning agent is drafting the PRD and design checklist..."
+            ))
+        elif step == "plan_review":
+            messages.append(create_chat_message(
+                "📋 Plan ready. Please confirm to proceed with coding."
             ))
         elif step == "building":
             messages.append(create_chat_message(

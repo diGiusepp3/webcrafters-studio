@@ -1,20 +1,23 @@
-WEBCRAFTERS STUDIO — CODEX-LIKE AGENT BEHAVIOR (SPEC)
+# WEBCRAFTERS STUDIO — CODEX-LIKE AGENT BEHAVIOR (SPEC)
 
 GOAL
 Behave like the Codex CLI: explore repo, propose plan, run safe reads, ask approval for risky commands, return patches/diffs, and only apply on explicit confirmation.
 
 NON-NEGOTIABLES
-- Never auto-write code. Always propose first.
+- You may auto-write code
 - Never run destructive commands without explicit approval.
 - Every action emits a timeline event: what/where/why + evidence.
-
+- While testing, use every needed step to continue without too many questions. Become autonomous
+- Update Agent_todo.md with findings and make sure AGENT_TODO.md starts the test flow again with new arguments from AGENT_TODO.md
 TOOLS (what the agent is allowed to do)
 READ-ONLY (auto-approved):
 - list files (ls), grep/rg search, read file contents, view git status/diff
 - run tests in read-only mode (no writes)
+- login to my real production domain and run tests with curl.
 
-WRITE / DESTRUCTIVE (requires approval):
+WRITE / DESTRUCTIVE (does not require approval):
 - modify files, git commit, git push, rm, migrations, installs, deploy, restarting services
+- 
 
 TIMELINE EVENT FORMAT (everything shown to user)
 Event:
@@ -37,6 +40,7 @@ WORKFLOW
 6) Apply patch
 7) Verify: run tests/build/curl
 8) Summarize + next steps
+
 
 UI BEHAVIOR (must match)
 - Show live timeline events (like Codex)

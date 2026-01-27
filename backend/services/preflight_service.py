@@ -1,12 +1,35 @@
 # FILE: backend/services/preflight_service.py
 
 from typing import Any, Dict, Optional
+
 from backend.schemas.generate import ClarifyResponse
 
 FRONTEND_HINTS = {"react", "vue", "svelte", "angular", "next", "nuxt", "html", "css", "tailwind", "vite", "browser", "frontend", "ui"}
 BACKEND_HINTS = {"api", "fastapi", "flask", "django", "express", "node", "backend", "server", "db", "database", "mongodb", "mysql", "postgres", "auth"}
 MOBILE_HINTS = {"android", "ios", "flutter", "react native", "expo", "maui"}
 DESKTOP_HINTS = {"desktop", "electron", "tauri", "wpf", "winforms", "qt"}
+
+# Website structure and "WOW in 5 seconds" requirements passed to the generator
+SITE_REQUIREMENTS: Dict[str, Any] = {
+    "wow_in_first_viewport": True,
+    "dark_mode_default": True,
+    "tailwind_required": True,
+    "minimum_external_images": 3,
+    "required_sections": [
+        "header",
+        "hero",
+        "features",
+        "social_proof",
+        "cta",
+        "footer",
+    ],
+    "quality_checks": [
+        "navigation_links_target_real_sections",
+        "clear_primary_cta_visible_above_fold",
+        "consistent_spacing_and_alignment",
+        "hover_and_focus_states_on_interactive_elements",
+    ],
+}
 
 DEFAULT_INDEX_HTML_SEO = """<!doctype html>
 <html lang="en">
@@ -42,12 +65,15 @@ DEFAULT_INDEX_HTML_SEO = """<!doctype html>
 </html>
 """
 
+
 def _has_any(text: str, words: set) -> bool:
     t = (text or "").lower()
     return any(w in t for w in words)
 
+
 def _safe_prefs(prefs: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return dict(prefs or {})
+
 
 def preflight_analyze(prompt: str, project_type: str, preferences: Optional[Dict[str, Any]] = None) -> ClarifyResponse:
     prompt_l = (prompt or "").strip().lower()
@@ -62,7 +88,7 @@ def preflight_analyze(prompt: str, project_type: str, preferences: Optional[Dict
     mentions_mobile = _has_any(prompt_l, MOBILE_HINTS)
     mentions_desktop = _has_any(prompt_l, DESKTOP_HINTS)
 
-    # 🔒 HARD RULE: EVERYTHING MUST HAVE A WEBVIEW
+    # HARD RULE: EVERYTHING MUST HAVE A WEBVIEW
     platform_guess = "web"
 
     wants_ai = any(k in prompt_l for k in ["openai", "chatgpt", "gpt", "ai"])
@@ -70,11 +96,12 @@ def preflight_analyze(prompt: str, project_type: str, preferences: Optional[Dict
     effective_project_type = pt
     effective_preferences = dict(prefs)
 
-    # Defaults
-    effective_preferences.setdefault("frontend_stack", "react-cra")
+    # Defaults tuned for preview reliability and strong frontend results
+    effective_preferences.setdefault("frontend_stack", "react-vite")
     effective_preferences.setdefault("backend_stack", "fastapi")
     effective_preferences.setdefault("database", "mysql")
     effective_preferences.setdefault("backend_port", 8000)
+    effective_preferences.setdefault("site_requirements", dict(SITE_REQUIREMENTS))
 
     if pt == "frontend":
         if wants_ai:
@@ -84,11 +111,11 @@ def preflight_analyze(prompt: str, project_type: str, preferences: Optional[Dict
         # backend-only STILL needs webview
         effective_project_type = "fullstack"
 
-    # 🔒 FORCE WEB ENTRYPOINT + SEO
+    # FORCE WEB ENTRYPOINT + SEO
     required_files = effective_preferences.setdefault("required_files", {})
     required_files.setdefault(
         "frontend/public/index.html",
-        DEFAULT_INDEX_HTML_SEO
+        DEFAULT_INDEX_HTML_SEO,
     )
 
     derived = {

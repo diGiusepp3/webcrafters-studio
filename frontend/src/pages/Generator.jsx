@@ -10,14 +10,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Navbar } from "@/components/Navbar";
 import { FileTree } from "@/components/FileTree";
 import { SecurityFindings } from "@/components/SecurityFindings";
-import { LiveCodeEditor } from "@/components/generator/LiveCodeEditor";
 import { CodeEditor } from "@/components/CodeEditor";
 import { ProjectTypeSelector } from "@/components/generator/ProjectTypeSelector";
 import { ClarifyDialog } from "@/components/generator/ClarifyDialog";
 import { PromptSuggestions } from "@/components/generator/PromptSuggestions";
 import { TemplateSelector } from "@/components/generator/TemplateSelector";
 import { AgentTimelinePanel } from "@/components/generator/AgentTimelinePanel";
-import { AgentEventStream } from "@/components/generator/AgentEventStream";
 import { DiffViewer } from "@/components/generator/DiffViewer";
 import { useAuth } from "@/context/AuthContext";
 
@@ -126,6 +124,25 @@ export default function Generator() {
   const eventCursorRef = useRef(null);
   const [currentJobId, setCurrentJobId] = useState(null);
 
+  const [agentActivity, setAgentActivity] = useState([]);
+  const [agentHeadline, setAgentHeadline] = useState("");
+  const [agentDetail, setAgentDetail] = useState("");
+  const [agentCommand, setAgentCommand] = useState("");
+  const [agentOutput, setAgentOutput] = useState("");
+
+  const [jobStatus, setJobStatus] = useState("");
+  const [jobStep, setJobStep] = useState("");
+  const [planSummaryText, setPlanSummaryText] = useState("");
+  const [planMessageText, setPlanMessageText] = useState("");
+  const [planConfirmed, setPlanConfirmed] = useState(false);
+  const [planReadyAt, setPlanReadyAt] = useState(null);
+  const [planConfirming, setPlanConfirming] = useState(false);
+  const [finalReasoningData, setFinalReasoningData] = useState(null);
+  const [finalReasoningMessage, setFinalReasoningMessage] = useState("");
+  const [finalConfirming, setFinalConfirming] = useState(false);
+  const [finalConfirmed, setFinalConfirmed] = useState(false);
+  const [buildResult, setBuildResult] = useState(null);
+
   // Chat input for modifications
   const [chatInput, setChatInput] = useState("");
   const [modifying, setModifying] = useState(false);
@@ -159,9 +176,14 @@ export default function Generator() {
   // UI
   const [activeTab, setActiveTab] = useState('chat');
   const chatEndRef = useRef(null);
+  const chatScrollRef = useRef(null);
+  const [autoScrollChat, setAutoScrollChat] = useState(true);
   const pollRef = useRef(null);
   const previewPollRef = useRef(null);
   const previewStartedAtRef = useRef(null);
+  const previewRetryRef = useRef({ attempts: 0, max: 3, pending: false });
+  const previewFixAttemptsRef = useRef(0);
+  const lastAgentStepRef = useRef("");
 
   // Progress steps
   const progressSteps = useMemo(() => [
@@ -174,10 +196,26 @@ export default function Generator() {
     { id: 'saving', title: 'Saving Project', icon: <Package className="w-4 h-4" />, description: 'Persisting your project to the database' },
   ], []);
 
-  // Scroll chat to bottom
+  // Scroll chat to bottom when user is near the end
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+    const el = chatScrollRef.current;
+    if (!el) return;
+
+    const handleScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 80;
+      setAutoScrollChat(atBottom);
+    };
+
+    handleScroll();
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [activeTab, loading, isEditMode]);
+
+  useEffect(() => {
+    if (!autoScrollChat) return;
+    if (!loading && activeTab !== 'chat') return;
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [chatMessages, autoScrollChat, activeTab, loading]);
 
   // ==========================================
   // EDIT MODE: Load existing project
@@ -268,6 +306,75 @@ export default function Generator() {
     return `${(ms / 1000).toFixed(1)}s`;
   };
 
+  const agentBusy = modifying || previewLoading;
+
+  const activityDotClass = (status) => {
+    if (status === 'error') return 'bg-red-500';
+    if (status === 'success') return 'bg-green-500';
+    return 'bg-cyan-400';
+  };
+
+  const detectMissingDependencies = (logText) => {
+    if (!logText) return false;
+    return /(cannot find module|module not found|err_module_not_found|missing script|cannot find package|failed to resolve dependency|command not found|not found: vite)/i.test(logText);
+  };
+
+  const detectPackageManager = (logText) => {
+    const lower = String(logText || '').toLowerCase();
+    if (lower.includes('pnpm')) return 'pnpm';
+    if (lower.includes('yarn')) return 'yarn';
+    if (lower.includes('bun')) return 'bun';
+    return 'npm';
+  };
+
+  const extractCommandFromLog = (logText) => {
+    if (!logText) return '';
+    const patterns = [
+      /^\s*(npm|pnpm|yarn|bun)\s+(install|ci)\b/m,
+      /^\s*(npm|pnpm|yarn|bun)\s+run\s+\S+/m,
+      /^\s*(pip|poetry)\s+\S+/m,
+    ];
+
+    for (const pattern of patterns) {
+      const match = logText.match(pattern);
+      if (match) return match[0].trim();
+    }
+
+    return '';
+  };
+
+  const resetAgentActivity = () => {
+    setAgentActivity([]);
+    setAgentHeadline('');
+    setAgentDetail('');
+    setAgentCommand('');
+    setAgentOutput('');
+    lastAgentStepRef.current = '';
+  };
+
+  const setAgentStep = (title, detail, status = 'running', options = {}) => {
+    const key = `${title}|${detail}|${status}`;
+    if (lastAgentStepRef.current !== key) {
+      lastAgentStepRef.current = key;
+      setAgentActivity((prev) => {
+        const next = [...prev, {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          title,
+          detail: detail || '',
+          status,
+          timestamp: new Date().toISOString(),
+        }];
+        return next.slice(-6);
+      });
+    }
+
+    setAgentHeadline(title);
+    setAgentDetail(detail || '');
+
+    if (options.command !== undefined) setAgentCommand(options.command);
+    if (options.output !== undefined) setAgentOutput(options.output);
+  };
+
   // ==========================================
   // CREATE MODE: Generation
   // ==========================================
@@ -287,6 +394,7 @@ export default function Generator() {
     setGeneratedFiles([]);
     setLiveFileContent({});
     setSelectedFile(null);
+    resetAgentActivity();
   };
 
   const stopEventPolling = () => {
@@ -342,6 +450,16 @@ export default function Generator() {
 
 
   const upsertAgentLog = (key, text) => {
+    if (typeof text === 'string') {
+      const cleaned = text
+        .replace(/^```[a-z]*\n?/i, '')
+        .replace(/```$/i, '')
+        .trim();
+      if (cleaned) {
+        setAgentOutput(cleaned.slice(-8000));
+      }
+    }
+
     setChatMessages((prev) => {
       const idx = prev.findIndex((m) => m?.metadata?.key === key);
 
@@ -373,6 +491,14 @@ export default function Generator() {
           timeline: jobTimeline, chat_messages: jobChatMessages,
           security_findings: jobSecurityFindings, message, preview_url,
           files, applied_fixes,
+          plan_summary: planSummary,
+          plan_message: planMessage,
+          plan_confirmed: planConfirmedFlag,
+          plan_ready_at: planReadyAt,
+          final_reasoning: finalReasoning,
+          final_reasoning_message: finalReasoningMessage,
+          final_confirmation: finalConfirmation,
+          build_result: buildResult,
         } = res.data;
 
         // Update timeline with proper structure
@@ -401,6 +527,16 @@ export default function Generator() {
           setSecurityScanRan(true);
         }
         if (preview_url) setPreviewUrl(preview_url);
+        setPlanSummary(planSummary || "");
+        setPlanMessage(planMessage || "");
+        setPlanConfirmed(Boolean(planConfirmedFlag));
+        setPlanReadyAt(planReadyAt || null);
+        setJobStatus(status || "");
+        setJobStep(step || "");
+        setFinalReasoning(finalReasoning || null);
+        setFinalReasoningMessage(finalReasoningMessage || "");
+        setFinalConfirmed(Boolean(finalConfirmation));
+        setBuildResult(buildResult || null);
 
         // Live file updates - show files as they're generated
         if (files && files.length > lastFilesCount) {
@@ -473,6 +609,32 @@ export default function Generator() {
         setError("Connection lost. Please try again.");
       }
     }, 1500);
+  };
+
+  const confirmPlan = async () => {
+    if (!currentJobId || planConfirmed) return;
+    setPlanConfirming(true);
+    try {
+      await api.post(`/generate/plan/${currentJobId}/confirm`);
+      setPlanConfirmed(true);
+    } catch (err) {
+      setError("Unable to confirm the plan. Please try again.");
+    } finally {
+      setPlanConfirming(false);
+    }
+  };
+
+  const confirmFinalReview = async () => {
+    if (!currentJobId || finalConfirmed) return;
+    setFinalConfirming(true);
+    try {
+      await api.post(`/generate/final/confirm/${currentJobId}`);
+      setFinalConfirmed(true);
+    } catch (err) {
+      setError("Unable to confirm the final review. Please try again.");
+    } finally {
+      setFinalConfirming(false);
+    }
   };
 
   // ===== HARD CREDIT CHECK =====
@@ -582,6 +744,8 @@ export default function Generator() {
     setDiffData(null);
     setDiffMode("applied");
     setShowDiff(false);
+    resetAgentActivity();
+    setAgentStep("Analyzing request", "Reviewing instructions and project context.", "running");
 
     // Add user message
     addChatMessage(userMessage, 'user');
@@ -648,7 +812,8 @@ export default function Generator() {
     });
   };
 
-  const pollModificationStatus = (jobId) => {
+  const pollModificationStatus = (jobId, options = {}) => {
+    const { autoApply = false, autoPreviewRetry = false } = options;
     const pollInterval = setInterval(async () => {
       try {
         const res = await api.get(`/projects/modify/status/${jobId}`);
@@ -662,6 +827,7 @@ export default function Generator() {
         } = res.data;
 
         if (status === 'running') {
+          setAgentStep("Applying changes", message || "Updating files and validating.", "running");
           setChatMessages(prev => {
             const filtered = prev.filter(m => m.metadata?.status !== 'thinking');
             return [...filtered, {
@@ -676,6 +842,50 @@ export default function Generator() {
           clearInterval(pollInterval);
           setModifying(false);
           setChatMessages(prev => prev.filter(m => m.metadata?.status !== 'thinking'));
+          if (requires_confirmation && autoApply) {
+            setModifying(true);
+            setAgentStep("Auto-apply fixes", "Applying changes to continue preview.", "running");
+            try {
+              const applyRes = await api.post(`/projects/modify/apply/${jobId}`);
+              const appliedFiles = applyRes.data?.updated_files || [];
+
+              addChatMessage(
+                `✅ ${applyRes.data?.message || 'Modifications applied successfully!'}`,
+                'agent',
+                'success'
+              );
+              setAgentStep("Changes applied", applyRes.data?.message || "Modifications applied successfully.", "success");
+              setModifying(false);
+
+              setProposalJobId(null);
+              setProposalSummary("");
+              setProposalNotes([]);
+
+              if (appliedFiles.length > 0) {
+                setDiffData(appliedFiles);
+                setDiffMode("applied");
+                setShowDiff(true);
+                applyUpdatedFilesToState(appliedFiles);
+                setIsTyping(true);
+                setTimeout(() => setIsTyping(false), 1000);
+              }
+
+              fetchProject();
+
+              if (autoPreviewRetry) {
+                schedulePreviewRetry();
+              }
+            } catch (applyErr) {
+              setModifying(false);
+              addChatMessage(
+                `❌ Error: ${applyErr?.response?.data?.detail || 'Failed to auto-apply changes.'}`,
+                'agent',
+                'error'
+              );
+              setAgentStep("Auto-apply failed", "Failed to apply changes automatically.", "error");
+            }
+            return;
+          }
           if (requires_confirmation) {
             const proposedFiles = proposal?.updated_files || updated_files || [];
             addChatMessage(
@@ -683,6 +893,7 @@ export default function Generator() {
               'agent',
               'success'
             );
+            setAgentStep("Review required", message || "A proposal is ready for your approval.", "running");
 
             if (proposedFiles.length > 0) {
               setProposalJobId(jobId);
@@ -697,6 +908,8 @@ export default function Generator() {
 
           addChatMessage(`✅ ${message || 'Modifications applied successfully!'}`, 'agent', 'success');
 
+          setAgentStep("Changes applied", message || "Modifications applied successfully.", "success");
+
           if (updated_files && updated_files.length > 0) {
             setDiffData(updated_files);
             setDiffMode("applied");
@@ -708,6 +921,10 @@ export default function Generator() {
           }
 
           fetchProject();
+
+          if (autoPreviewRetry) {
+            schedulePreviewRetry();
+          }
         }
 
         if (status === 'error') {
@@ -715,11 +932,13 @@ export default function Generator() {
           setModifying(false);
           setChatMessages(prev => prev.filter(m => m.metadata?.status !== 'thinking'));
           addChatMessage(`❌ Error: ${jobError || 'Modification failed'}`, 'agent', 'error');
+          setAgentStep("Change failed", jobError || "Modification failed.", "error");
         }
       } catch (err) {
         clearInterval(pollInterval);
         setModifying(false);
         setChatMessages(prev => prev.filter(m => m.metadata?.status !== 'thinking'));
+        setAgentStep("Change failed", "Connection lost while applying changes.", "error");
       }
     }, 2000);
 
@@ -728,6 +947,7 @@ export default function Generator() {
       if (modifying) {
         setModifying(false);
         addChatMessage('⏱️ Request timed out. Please try again.', 'agent', 'error');
+        setAgentStep("Change timed out", "The request took too long.", "error");
       }
     }, 120000);
   };
@@ -736,6 +956,7 @@ export default function Generator() {
     if (!proposalJobId || applyingProposal) return;
     setApplyingProposal(true);
     setError("");
+    setAgentStep("Applying proposed changes", "Applying approved modifications.", "running");
     addChatMessage("Applying approved changes...", "agent", "thinking");
 
     try {
@@ -748,6 +969,7 @@ export default function Generator() {
         'agent',
         'success'
       );
+      setAgentStep("Changes applied", res.data?.message || "Modifications applied successfully.", "success");
 
       setProposalJobId(null);
       setProposalSummary("");
@@ -768,6 +990,7 @@ export default function Generator() {
         'agent',
         'error'
       );
+      setAgentStep("Apply failed", err?.response?.data?.detail || "Failed to apply changes.", "error");
     } finally {
       setApplyingProposal(false);
     }
@@ -809,15 +1032,34 @@ export default function Generator() {
   };
 
 
-  const handlePreview = async () => {
+  const handlePreview = async (options = {}) => {
+    const { auto = false } = options;
     if (!projectId) return;
+
+    if (!auto) {
+      previewRetryRef.current.attempts = 0;
+      previewRetryRef.current.pending = false;
+      previewFixAttemptsRef.current = 0;
+    }
+
+    if (auto && previewRetryRef.current.attempts >= previewRetryRef.current.max) {
+      setAgentStep("Preview attempts reached", "Please review build logs before retrying.", "error");
+      return;
+    }
+
+    previewRetryRef.current.attempts += 1;
 
     // UI: open Agent tab + show loading
     setActiveTab("chat");
     setPreviewLoading(true);
     setError("");
 
-    addChatMessage("🧪 Preview: trying to build (testing agent)…", "agent");
+    resetAgentActivity();
+    setAgentStep("Starting preview", "Starting build on deployment server. Please wait.", "running");
+    setAgentCommand("");
+    setAgentOutput("");
+
+    addChatMessage("Preview: starting build on deployment server...", "agent");
     upsertAgentLog("preview-log", "```bash\nstarting preview...\n```");
 
     // cleanup old poll
@@ -832,6 +1074,7 @@ export default function Generator() {
       if (!preview_id) {
         setPreviewLoading(false);
         addChatMessage("Preview start failed: missing preview id.", "agent", "error");
+        setAgentStep("Preview failed", "Missing preview id from server.", "error");
         return;
       }
 
@@ -1462,297 +1705,367 @@ export default function Generator() {
   }
 
   // ==========================================
-  // RENDER: CREATE MODE - Generation in progress
-  // ==========================================
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#030712] flex flex-col">
-        <Navbar />
-        
-        <div className="flex-1 flex pt-16">
-          {/* Left: Live Generated Output */}
-          <div className="flex-1 flex flex-col border-r border-white/5">
-            <div className="px-6 py-4 border-b border-white/5 bg-[#0a0f1a]">
-              <div className="flex items-center justify-between">
-                <h2 className="font-heading text-lg font-bold text-white flex items-center gap-2">
-                  <Code2 className="w-5 h-5 text-cyan-400" />
-                  Generated Output
-                  {generatedFiles.length > 0 && (
-                    <span className="text-xs text-gray-500">({generatedFiles.length} files)</span>
-                  )}
-                </h2>
-                <Button size="sm" variant="ghost" className="text-gray-400">
-                  <RefreshCw className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex-1 flex overflow-hidden">
-              {/* File list */}
-              <div className="w-56 border-r border-white/5 overflow-y-auto bg-[#0a0f1a]/50">
-                {generatedFiles.length === 0 ? (
-                  <div className="p-4 text-center text-gray-500 text-sm">
-                    <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin text-cyan-400" />
-                    Waiting for files...
-                  </div>
-                ) : (
-                  <div className="py-2">
-                    {generatedFiles.map((file, idx) => (
-                      <button
-                        key={file.path}
-                        onClick={() => setSelectedFile(file)}
-                        className={`w-full text-left px-4 py-2 flex items-center justify-between gap-2 hover:bg-white/5 transition-colors ${
-                          selectedFile?.path === file.path ? 'bg-cyan-500/10 text-cyan-400 border-l-2 border-cyan-500' : 'text-gray-400'
-                        }`}
-                      >
-                        <span className="truncate text-sm">{file.path}</span>
-                        <span className="text-xs text-gray-600">
-                          {file.content?.split('\n').length || 0}L
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Code view */}
-              <div className="flex-1 overflow-auto">
-                {selectedFile ? (
-                  <LiveCodeEditor
-                    file={selectedFile}
-                    isTyping={isTyping && currentTypingFile?.path === selectedFile.path}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-full text-gray-500">
-                    <div className="text-center">
-                      <Code2 className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                      <p>Select a file to view code</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Project type & description */}
-            <div className="px-6 py-4 border-t border-white/5 bg-[#0a0f1a]">
-              <div className="flex items-center gap-4 mb-3">
-                <span className="text-sm text-gray-400">Project Type:</span>
-                <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 text-sm">{projectType}</span>
-              </div>
-              <div>
-                <span className="text-sm text-gray-400">Prompt:</span>
-                <p className="text-gray-300 text-sm mt-1 line-clamp-2">{prompt}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Agent Timeline & Chat */}
-          <div className="w-96 flex flex-col bg-[#0a0f1a]">
-            {/* Progress */}
-            <div className="px-6 py-4 border-b border-white/5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-white">Generation Progress</span>
-                <span className="text-sm text-cyan-400">{Math.round(progress)}%</span>
-              </div>
-              <Progress value={progress} className="h-2" />
-            </div>
-
-            {/* Agent Timeline */}
-            <div className="px-4 py-3 border-b border-white/5">
-              <h3 className="text-sm font-medium text-white mb-3 flex items-center gap-2">
-                <Activity className="w-4 h-4 text-cyan-400" />
-                Agent Timeline
-              </h3>
-              <AgentTimelinePanel steps={timeline} progressSteps={progressSteps} />
-            </div>
-
-            {/* Agent Events */}
-            <div className="px-4 py-3 border-b border-white/5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-white flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-cyan-400" />
-                  Agent Events
-                </span>
-                <span className="text-xs text-gray-500">{agentEvents.length} recorded</span>
-              </div>
-              <AgentEventStream events={agentEvents} />
-            </div>
-
-            {/* Agent Chat */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-                <h3 className="text-sm font-medium text-white flex items-center gap-2">
-                  <Bot className="w-4 h-4 text-cyan-400" />
-                  Agent Chat
-                </h3>
-                <span className="text-xs text-gray-500">{chatMessages.length} messages</span>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {chatMessages.map((msg, i) => (
-                  <ChatMessage
-                    key={i}
-                    message={msg}
-                    isUser={msg.metadata?.role === 'user'}
-                    isThinking={msg.metadata?.status === 'thinking'}
-                  />
-                ))}
-                <div ref={chatEndRef} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ==========================================
-  // RENDER: CREATE MODE - Initial form
+  // RENDER: CREATE MODE (chat-first workspace)
   // ==========================================
   return (
     <div className="min-h-screen bg-[#030712]">
       <Navbar />
 
-      <div className="max-w-6xl mx-auto px-6 pt-24 pb-12">
-        {/* Header */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-card mb-6">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
-            </span>
-            <span className="text-sm text-cyan-400 font-medium">AI Agent Ready</span>
-          </div>
-          <h1 className="font-heading text-4xl font-bold text-white mb-3">
-            What would you like to build?
-          </h1>
-          <p className="text-gray-400 text-lg max-w-2xl mx-auto">
-            Describe your project and watch our AI agent plan, code, test, and deliver
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left: Input form */}
-          <div className="lg:col-span-2 space-y-6">
-            {showTemplates ? (
-              <TemplateSelector
-                onSelect={handleTemplateSelect}
-                onClose={() => setShowTemplates(false)}
-              />
-            ) : (
-              <>
-                {selectedTemplate && (
-                  <div className="glass-card p-4 rounded-xl flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center text-white">
-                        <Sparkles className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-white font-medium">{selectedTemplate.name}</p>
-                        <p className="text-gray-500 text-sm">Template selected</p>
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="sm" onClick={() => { setSelectedTemplate(null); setPrompt(''); }}>
-                      Clear
-                    </Button>
-                  </div>
-                )}
-
-                <div className="glass-card p-6 rounded-xl">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-heading font-bold text-white flex items-center gap-2">
-                      <Layers className="w-5 h-5 text-cyan-400" />
-                      Project Type
-                    </h3>
-                    <Button variant="ghost" size="sm" onClick={() => setShowTemplates(true)} className="text-cyan-400">
-                      <Sparkles className="w-4 h-4 mr-1" />
-                      Templates
-                    </Button>
-                  </div>
-                  <ProjectTypeSelector selected={projectType} onSelect={setProjectType} disabled={loading} />
-                </div>
-
-                <div className="glass-card p-6 rounded-xl">
-                  <h3 className="font-heading font-bold text-white flex items-center gap-2 mb-4">
-                    <Terminal className="w-5 h-5 text-cyan-400" />
-                    Describe Your Project
-                  </h3>
-                  
-                  {!prompt && <PromptSuggestions onSelect={setPrompt} projectType={projectType} />}
-
-                  <Textarea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="E.g., Build a SaaS dashboard with auth, billing, and analytics..."
-                    className="min-h-[180px] bg-black/40 border-white/10 text-white placeholder:text-gray-500 resize-none text-base"
-                    disabled={loading}
-                  />
-
-                  {error && (
-                    <div className="mt-4 flex items-start gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
-                      <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-medium">Generation Failed</p>
-                        <p className="text-sm opacity-80 mt-1">{error}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {clarifyQuestions.length > 0 && (
-                    <div className="mt-6">
-                      <ClarifyDialog
-                        questions={clarifyQuestions}
-                        answers={clarifyAnswers}
-                        onAnswerChange={(key, value) => setClarifyAnswers(prev => ({ ...prev, [key]: value }))}
-                        onSubmit={submitClarify}
-                        isSubmitting={loading}
-                      />
-                    </div>
-                  )}
-
-                  {clarifyQuestions.length === 0 && (
-                    <Button
-                      onClick={handleGenerate}
-                      disabled={loading || !prompt.trim()}
-                      className="w-full mt-6 btn-primary py-6 text-lg"
-                    >
-                      <Wand2 className="w-5 h-5 mr-2" />
-                      Generate Project
-                    </Button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Right: Tips */}
-          <div className="space-y-6">
-            <div className="glass-card p-6 rounded-xl">
-              <h3 className="font-heading font-bold text-white flex items-center gap-2 mb-4">
-                <Lightbulb className="w-5 h-5 text-yellow-400" />
-                Tips for Better Results
-              </h3>
-              <ul className="space-y-3 text-sm text-gray-400">
-                <li className="flex items-start gap-2">
-                  <ChevronRight className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
-                  Be specific about features and functionality
-                </li>
-                <li className="flex items-start gap-2">
-                  <ChevronRight className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
-                  Mention preferred tech stack if you have one
-                </li>
-                <li className="flex items-start gap-2">
-                  <ChevronRight className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
-                  Include authentication requirements
-                </li>
-                <li className="flex items-start gap-2">
-                  <ChevronRight className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
-                  Describe the UI/UX you envision
-                </li>
-              </ul>
+      <main className="max-w-5xl mx-auto px-6 py-10 space-y-8 md:space-y-10">
+        <section className="rounded-3xl border border-white/10 bg-[#0a0f1a]/80 p-6 space-y-6">
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-card">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+              </span>
+              <span className="text-sm text-cyan-400 font-medium">AI Agent Ready</span>
+            </div>
+            <div>
+              <h1 className="font-heading text-4xl font-bold text-white leading-tight">
+                What would you like to build?
+              </h1>
+              <p className="text-gray-400 mt-2 text-lg max-w-3xl">
+                Describe your project and watch the reasoning, coding, testing, and preview agents collaborate in a chat-first workspace.
+              </p>
             </div>
           </div>
+
+          <div className="rounded-2xl border border-white/10 bg-black/40 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-widest text-gray-500">Agent status</p>
+                <p className="text-lg font-semibold text-white">
+                  {statusText || jobStatus || "Waiting on your prompt..."}
+                </p>
+              </div>
+              <span className="text-xs text-cyan-400">{jobStep || jobStatus}</span>
+            </div>
+            <Progress value={Math.min(progress, 100)} className="h-2 rounded-full mt-3" />
+          </div>
+
+          {showTemplates ? (
+            <TemplateSelector
+              onSelect={handleTemplateSelect}
+              onClose={() => setShowTemplates(false)}
+            />
+          ) : (
+            <div className="space-y-5">
+              {selectedTemplate && (
+                <div className="glass-card p-4 rounded-2xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center text-white">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-white font-medium">{selectedTemplate.name}</p>
+                      <p className="text-gray-500 text-sm">Template selected</p>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => { setSelectedTemplate(null); setPrompt(''); }}>
+                    Clear
+                  </Button>
+                </div>
+              )}
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <ProjectTypeSelector selected={projectType} onSelect={setProjectType} disabled={loading} />
+                <Button
+                  variant="outline"
+                  className="w-full md:w-auto glass-card border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10"
+                  onClick={() => setShowTemplates(true)}
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Templates
+                </Button>
+              </div>
+              <div className="space-y-3">
+                {!prompt && <PromptSuggestions onSelect={setPrompt} projectType={projectType} />}
+                <Textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="E.g., Build a SaaS dashboard with auth, billing, and analytics..."
+                  className="min-h-[200px] bg-black/40 border-white/10 text-white placeholder:text-gray-500 resize-none text-base"
+                  disabled={loading}
+                />
+                {error && (
+                  <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 flex-shrink-0 text-red-300" />
+                    <div>
+                      <p className="font-semibold">Generation failed</p>
+                      <p className="text-xs text-red-100 mt-1">{error}</p>
+                    </div>
+                  </div>
+                )}
+                {clarifyQuestions.length > 0 && (
+                  <ClarifyDialog
+                    questions={clarifyQuestions}
+                    answers={clarifyAnswers}
+                    onAnswerChange={(key, value) => setClarifyAnswers((prev) => ({ ...prev, [key]: value }))}
+                    onSubmit={submitClarify}
+                    isSubmitting={loading}
+                  />
+                )}
+              </div>
+              <Button
+                onClick={handleGenerate}
+                disabled={loading || !prompt.trim()}
+                className="w-full bg-gradient-to-br from-cyan-500 to-violet-500 text-lg text-white py-4 rounded-2xl"
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating...
+                  </span>
+                ) : (
+                  <span className="flex items-center justify-center gap-2">
+                    <Wand2 className="w-5 h-5" />
+                    Generate Project
+                  </span>
+                )}
+              </Button>
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-4">
+          <div className="rounded-3xl border border-white/10 bg-[#0b1220]/80 p-6 space-y-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-gray-500">Reasoning Plan</p>
+                <h2 className="text-2xl font-semibold text-white">
+                  {planSummaryText || "Awaiting the reasoning agent's plan..."}
+                </h2>
+              </div>
+              <div className="flex items-center gap-2">
+                {jobStatus === "plan_ready" && (
+                  <Button size="sm" onClick={confirmPlan} disabled={planConfirming || planConfirmed}>
+                    {planConfirming ? "Confirming..." : planConfirmed ? "Plan confirmed" : "Confirm plan"}
+                  </Button>
+                )}
+                {planConfirmed && <span className="text-xs text-emerald-400">Plan accepted</span>}
+              </div>
+            </div>
+            {planMessageText ? (
+              <pre className="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm text-gray-100 whitespace-pre-wrap max-h-[280px] overflow-y-auto">
+                {planMessageText}
+              </pre>
+            ) : (
+              <p className="text-sm text-gray-500">The reasoning agent is still drafting the PRD and user problem statement.</p>
+            )}
+            {planReadyAt && (
+              <p className="text-xs text-gray-500">Plan ready at {new Date(planReadyAt).toLocaleTimeString()}</p>
+            )}
+            {securityFindings.length > 0 && (
+              <div className="rounded-2xl border border-cyan-500/30 bg-black/40 p-4">
+                <h4 className="text-sm font-semibold text-white mb-2">Security snapshot</h4>
+                <SecurityFindings findings={securityFindings} />
+              </div>
+            )}
+          </div>
+          <div className="rounded-3xl border border-white/10 bg-[#080d18]/80 p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-white">Agent Timeline</h3>
+              <span className="text-xs text-gray-400">Progress: {Math.min(progress, 100)}%</span>
+            </div>
+            <AgentTimelinePanel steps={timeline} progressSteps={progressSteps} />
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-[#05090f]/80 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-white">Agent Chat</h3>
+            <span className="text-xs text-gray-400">{chatMessages.length} messages</span>
+          </div>
+          <div className="max-h-[340px] w-full space-y-3 overflow-y-auto pr-1">
+            {chatMessages.length === 0 ? (
+              <p className="text-sm text-gray-500">The conversation will appear here once the agent engages.</p>
+            ) : (
+              chatMessages.map((msg, idx) => (
+                <ChatMessage
+                  key={`${msg.timestamp}-${idx}`}
+                  message={msg}
+                  isUser={msg.metadata?.role === 'user'}
+                  isThinking={msg.metadata?.status === 'thinking'}
+                />
+              ))
+            )}
+            <div ref={chatEndRef} />
+          </div>
+        </section>
+
+        <section className="grid gap-6 md:grid-cols-2">
+          <div className="rounded-3xl border border-white/10 bg-[#0a0f1a]/80 p-6 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-semibold text-white">Final Reasoning</h3>
+              {!finalConfirmed && jobStatus === 'review_pending' && (
+                <Button size="sm" onClick={confirmFinalReview} disabled={finalConfirming}>
+                  {finalConfirming ? 'Confirming...' : 'Confirm final review'}
+                </Button>
+              )}
+              {finalConfirmed && (
+                <span className="text-xs text-emerald-400">Final review confirmed</span>
+              )}
+            </div>
+            {finalReasoningData ? (
+              <div className="space-y-3 text-sm text-gray-300">
+                <p>{finalReasoningData.final_summary}</p>
+                {finalReasoningData.issues?.length > 0 && (
+                  <ul className="list-disc pl-5 text-xs text-gray-400 space-y-1">
+                    {finalReasoningData.issues.map((issue, index) => (
+                      <li key={`issue-${index}`}>{issue}</li>
+                    ))}
+                  </ul>
+                )}
+                {finalReasoningData.next_steps?.length > 0 && (
+                  <div className="text-xs text-gray-400">
+                    <p className="font-semibold text-white mb-1">Next steps:</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      {finalReasoningData.next_steps.map((stepText, idx) => (
+                        <li key={`next-${idx}`}>{stepText}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {finalReasoningData.checks?.length > 0 && (
+                  <div className="text-xs text-gray-400">
+                    <p className="font-semibold text-white mb-1">Checks:</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      {finalReasoningData.checks.map((check, idx) => (
+                        <li key={`check-${idx}`}>{check}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {typeof finalReasoningData.ready_for_release === 'boolean' && (
+                  <p className="text-xs text-gray-500">
+                    Ready for release?{' '}
+                    <span className="font-semibold text-cyan-400">
+                      {finalReasoningData.ready_for_release ? 'Yes' : 'No'}
+                    </span>
+                  </p>
+                )}
+                {buildResult && (
+                  <p className="text-xs text-gray-500">
+                    Build status: {buildResult.status || 'pending'}{buildResult.error ? ` - ${buildResult.error}` : ''}
+                  </p>
+                )}
+              </div>
+            ) : finalReasoningMessage ? (
+              <pre className="rounded-2xl border border-white/10 bg-black/40 p-3 text-xs text-gray-300">
+                {finalReasoningMessage}
+              </pre>
+            ) : (
+              <p className="text-sm text-gray-500">Final reasoning will appear once the preview evaluation finishes.</p>
+            )}
+          </div>
+          <div className="rounded-3xl border border-white/10 bg-[#0a0f1a]/80 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-gray-500">Preview / Build</p>
+                <p className="text-lg font-semibold text-white">
+                  {buildResult?.status || 'Waiting for preview'}
+                </p>
+              </div>
+              {previewUrl && (
+                <Button size="sm" variant="outline" onClick={() => setPreviewOpen(true)}>
+                  Open preview
+                </Button>
+              )}
+            </div>
+            <p className="text-sm text-gray-400">
+              {buildResult?.error
+                ? `Error: ${buildResult.error}`
+                : previewUrl
+                  ? 'Preview ready. Click the button to open it.'
+                  : 'Preview will be built once the agent finishes coding.'
+              }
+            </p>
+            {previewUrl && (
+              <div className="rounded-2xl border border-white/10 bg-black/40 p-3 text-xs text-gray-400 truncate">
+                {previewUrl}
+              </div>
+            )}
+            {previewLoading && (
+              <p className="text-xs text-amber-300">Preview build in progress... this may take a minute.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-[#05090f]/80 p-6">
+          <h3 className="text-xs uppercase tracking-[0.3em] text-gray-400 mb-4">Tips for Better Results</h3>
+          <div className="grid gap-3 sm:grid-cols-2 text-sm text-gray-400">
+            <p className="flex items-start gap-2"><ChevronRight className="w-4 h-4 text-cyan-500 mt-0.5" />Be specific about features and functionality.</p>
+            <p className="flex items-start gap-2"><ChevronRight className="w-4 h-4 text-cyan-500 mt-0.5" />Mention preferred tech stack if you have one.</p>
+            <p className="flex items-start gap-2"><ChevronRight className="w-4 h-4 text-cyan-500 mt-0.5" />Include authentication requirements.</p>
+            <p className="flex items-start gap-2"><ChevronRight className="w-4 h-4 text-cyan-500 mt-0.5" />Describe the UI/UX you envision.</p>
+          </div>
+        </section>
+      </main>
+
+      {previewOpen && (
+        <div className={`border-l border-white/5 bg-[#0a0f1a] flex flex-col ${previewFullscreen ? 'fixed inset-0 z-50' : 'w-[500px]'}`}>
+          <div className="px-4 py-2 border-b border-white/5 flex items-center justify-between bg-black/40">
+            <span className="text-sm font-medium text-white flex items-center gap-2">
+              <MonitorPlay className="w-4 h-4 text-cyan-400" />
+              Live Preview
+            </span>
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setPreviewFullscreen((prev) => !prev)}
+                className="h-7 w-7 p-0 text-gray-400 hover:text-white"
+              >
+                {previewFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </Button>
+              {previewUrl && (
+                <a
+                  href={previewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-7 w-7 flex items-center justify-center text-gray-400 hover:text-white"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setPreviewOpen(false)}
+                className="h-7 w-7 p-0 text-gray-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="flex-1 bg-white">
+            {previewUrl ? (
+              <iframe
+                src={previewUrl}
+                className="w-full h-full border-0"
+                title="Project Preview"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                <Loader2 className="w-8 h-8 animate-spin" />
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+
+      {showDiff && diffData && (
+        <DiffViewer
+          changes={diffData}
+          mode={diffMode}
+          onApply={diffMode === 'proposal' ? handleApplyProposal : null}
+          applying={applyingProposal}
+          summary={proposalSummary}
+          notes={proposalNotes}
+          onClose={() => setShowDiff(false)}
+        />
+      )}
     </div>
   );
 }

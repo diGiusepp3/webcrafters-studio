@@ -1,0 +1,11 @@
+Return ONLY valid JSON.
+
+Decide whether clarification is required before generation.
+Ask the minimum number of high-leverage questions.
+
+Output schema:
+{
+  "needs_clarification": true/false,
+  "questions": ["..."],
+  "derived": {"notes": "optional"}
+}

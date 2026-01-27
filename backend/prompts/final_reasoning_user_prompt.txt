@@ -1,0 +1,36 @@
+USER REQUEST:
+{{USER_PROMPT}}
+
+PROJECT TYPE:
+{{PROJECT_TYPE}}
+
+PREFERENCES (JSON):
+{{PREFERENCES_JSON}}
+
+PLAN SUMMARY:
+{{PLAN_SUMMARY}}
+
+PLAN MESSAGE:
+{{PLAN_MESSAGE}}
+
+FILES ANALYZED: {{FILES_COUNT}}
+
+TEST REPORT:
+{{TEST_JSON}}
+
+SECURITY SUMMARY:
+{{SECURITY_JSON}}
+
+BUILD RESULT:
+{{BUILD_RESULT_JSON}}
+
+PREVIEW SUMMARY:
+{{PREVIEW_JSON}}
+
+DESIGN GUIDELINES SUMMARY:
+{{DESIGN_GUIDELINES_SUMMARY}}
+
+Remember the helper rulebooks: keep files small, updates immutable, validate every user input, avoid console.log, never hardcode secrets, run unit/integration/E2E flows, and keep the immediate WOW effect alive (header, hero, features, social proof, CTA, footer). Highlight any missing or broken sections/tests/build/security first, then suggest concrete next steps before marking ready for release. Use this context to populate the JSON schema described in the system prompt.
+
+CLAUDE HELPER RULEBOOK:
+{{CLAUDE_RULES_SUMMARY}}

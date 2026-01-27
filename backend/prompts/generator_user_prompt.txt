@@ -1,0 +1,31 @@
+You are generating a project for Webcrafters Studio.
+
+USER REQUEST:
+{{USER_PROMPT}}
+
+PROJECT TYPE HINT:
+{{PROJECT_TYPE}}
+
+PREFERENCES (JSON):
+{{PREFERENCES_JSON}}
+
+PLAN TO FOLLOW (DERIVED FROM REASONING AGENT):
+{{PLAN_TEXT}}
+
+EXECUTION PLAN (FOLLOW THIS EVEN IF USER IS VAGUE):
+- Deliver a complete, runnable project.
+- If this is frontend-oriented, prioritize a single outstanding landing page.
+- Ensure the first viewport has a WOW effect.
+- Use strong layout structure: header -> hero -> features -> social proof -> CTA -> footer.
+- Use mock data and static content so the UI always renders.
+
+FRONTEND COMPLETENESS CHECKLIST:
+- Navigation links scroll to real sections.
+- Primary and secondary CTAs are present and visually distinct.
+- Cards, grids, and sections have consistent spacing and alignment.
+- Typography scale is intentional (clear headline, subhead, body, captions).
+- The footer contains at least: brand, quick links, and a small legal/help row.
+
+IMPORTANT:
+- Output ONLY valid JSON matching the required schema.
+- Include all files needed to run and build.

@@ -1,0 +1,13 @@
+﻿USER REQUEST:
+{{USER_PROMPT}}
+
+PROJECT TYPE HINT:
+{{PROJECT_TYPE}}
+
+PREFERENCES (JSON):
+{{PREFERENCES_JSON}}
+
+Use the design guidelines and helper rulebook provided earlier. Analyze the request and produce the JSON schema described in the system prompt.
+
+CLAUDE HELPER RULEBOOK:
+{{CLAUDE_RULES_SUMMARY}}

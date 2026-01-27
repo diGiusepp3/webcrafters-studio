@@ -32,12 +32,17 @@ from backend.models.preview_report import PreviewReport
 from backend.models.credit_ledger import CreditLedger
 from backend.schemas.generate import GenerateRequest, ClarifyRequest, ClarifyResponse
 from backend.services.preflight_service import preflight_analyze
-from backend.services.ai_service import clarify_with_ai, generate_code_with_ai
+from backend.services.ai_service import clarify_with_ai
+from backend.agents.reasoning_agent import run_reasoning_step, run_final_reasoning_step
+from backend.agents.code_agent import run_code_agent
+from backend.agents.test_agent import run_test_agent
+from backend.agents.security_agent import run_security_agent
+from backend.agents.build_agent import run_build_agent
 from backend.services.patch_service import patch_generated_project
 from backend.services.agent_service import (
     get_step_info, create_chat_message, generate_step_chat_messages
 )
-from backend.services.security_checker import check_project_security, apply_security_fixes
+from backend.services.security_checker import apply_security_fixes
 from backend.services.fix_loop_service import run_fix_loop
 from backend.services.dev_user_service import get_dev_user_ids, is_dev_user_id
 from backend.validators.node_openai_validator import validate_node_openai
@@ -46,7 +51,7 @@ from backend.validators.node_openai_validator import validate_node_openai
 from backend.repair.ai_repair import _parse_ai_json as parse_ai_json, AIJSONError
 
 # Preview service (build + status/log polling)
-from backend.services.preview_service import start_preview_job, read_status, tail_logs
+from backend.services.preview_service import start_preview_job, read_status, tail_logs, start_build
 from backend.services.agent_event_service import append_event, list_events
 
 router = APIRouter(prefix="/api", tags=["generate"])
@@ -82,6 +87,48 @@ def _emit_event(job_id: str, payload: Dict[str, Any]) -> None:
     append_event(job, payload)
     job["updated_at"] = _now_ts()
 
+
+def _format_plan_text(plan: Dict[str, Any]) -> str:
+    if not plan:
+        return ""
+    lines = []
+    problem = plan.get("problem_statement")
+    if problem:
+        lines.append(f"Problem: {problem}")
+    summary = plan.get("plan_summary")
+    if summary:
+        lines.append(f"Plan summary: {summary}")
+    for idx, step in enumerate(plan.get("plan") or [], start=1):
+        lines.append(f"{idx}. {step.get('title')}: {step.get('description')}")
+    checks = plan.get("checks") or []
+    if checks:
+        lines.append("Checks:")
+        for check in checks:
+            lines.append(f"- {check}")
+    return "\n".join(lines)
+
+
+def _build_plan_message(plan: Dict[str, Any]) -> str:
+    if not plan:
+        return "No plan available."
+    message = [
+        "Reasoning agent produced a plan.",
+        f"Problem statement: {plan.get('problem_statement') or 'N/A'}",
+        f"Design guidelines summary: {plan.get('design_guidelines') or 'N/A'}",
+        "Plan steps:"
+    ]
+    for idx, step in enumerate(plan.get("plan") or [], start=1):
+        message.append(f"{idx}. {step.get('title')}: {step.get('description')}")
+    summary = plan.get("plan_summary")
+    if summary:
+        message.append(f"Plan summary: {summary}")
+    checks = plan.get("checks") or []
+    if checks:
+        message.append("Checks:")
+        for check in checks:
+            message.append(f"- {check}")
+    return "\n".join(message)
+
 def init_job_state(job_id: str, payload: Dict[str, Any], user_id: str) -> Dict[str, Any]:
     return {
         "job_id": job_id,
@@ -102,15 +149,34 @@ def init_job_state(job_id: str, payload: Dict[str, Any], user_id: str) -> Dict[s
         "events": [],
         "event_seq": 0,
 
+        # Reasoning plan state
+        "plan": None,
+        "plan_message": None,
+        "plan_text": "",
+        "plan_summary": None,
+        "plan_confirmed": False,
+        "plan_confirmation_at": None,
+        "plan_ready_at": None,
+        "final_reasoning": None,
+        "final_reasoning_message": None,
+        "final_confirmation": None,
+
+        # Preflight metadata
+        "preflight_analysis": None,
+        "effective_preferences": None,
+
         # Preview & reporting
         "preview_url": None,
+        "preview_id": None,
         "screenshots": [],
         "build_logs": "",
         "runtime_logs": "",
         "preview_summary": None,
+        "build_result": None,
 
         # Security & fixes
         "security_findings": [],
+        "security_stats": None,
         "applied_fixes": [],
 
         # Live file updates
@@ -420,12 +486,21 @@ async def _preview_fix_loop(
         attempt = i + 1
         set_building_message(job_id, "build", attempt, PREVIEW_FIX_MAX_ITERS)
 
-        pj = start_preview_job(project_id_hint, files, project_type=effective_pt)
-        preview_id = pj.get("preview_id")
-        preview_url = pj.get("url")
+        build_info = await run_build_agent(project_id_hint, effective_pt, files)
+        preview_id = build_info.get("preview_id")
+        preview_url = build_info.get("preview_url")
+        build_result = build_info.get("build_result") or {}
         job["preview_url"] = preview_url
         preview_summary["final_preview_url"] = preview_url
         preview_summary["final_preview_id"] = preview_id
+        job["preview_id"] = preview_id
+        job["build_result"] = build_result
+
+        if not preview_id:
+            raise RuntimeError("Preview build failed to start: missing preview_id")
+        if isinstance(build_result, dict) and not build_result.get("ok", True):
+            err = build_result.get("error") or "unknown error"
+            raise RuntimeError(f"Preview build failed to start: {err}")
 
         st = await _poll_preview_until_done_streaming(job_id, preview_id, PREVIEW_POLL_TIMEOUT_SECONDS)
         build_logs = tail_logs(preview_id, max_bytes=PREVIEW_MAX_LOG_BYTES) or ""
@@ -508,6 +583,76 @@ async def _preview_fix_loop(
     return files, preview_summary
 
 
+async def _plan_worker(job_id: str, user: dict):
+    job = JOB_STATUS.get(job_id)
+    if not job:
+        return
+
+    payload = job.get("payload") or {}
+    prompt = str(payload.get("prompt") or "")
+    project_type = str(payload.get("project_type") or "any")
+    preferences = payload.get("preferences") or {}
+
+    try:
+        set_status(job_id, "running", "preflight", "Analyzing your prompt…")
+        analysis = preflight_analyze(prompt, project_type, preferences)
+        mark_step_complete(job_id, "preflight", True)
+
+        effective_pt = (
+            analysis.derived.get("effective_project_type")
+            or project_type
+            or "fullstack"
+        ).lower().strip()
+        effective_prefs = analysis.derived.get("effective_preferences") or preferences or {}
+
+        job["effective_project_type"] = effective_pt
+        job["effective_prompt"] = prompt
+        job["effective_preferences"] = effective_prefs
+        job["preflight_analysis"] = analysis
+
+        if (project_type or "").lower().strip() == "any":
+            set_status(job_id, "running", "clarifying", "Clarifying intent…", {"project_type": effective_pt})
+            clar = normalize_clarify(await clarify_with_ai(prompt, "any"))
+            if clar.needs_clarification:
+                job["status"] = "clarify"
+                job["step"] = "clarify"
+                job["message"] = "Clarification required."
+                job["questions"] = clar.questions
+                add_chat_message(job_id, "ðŸ¤” I need some clarification before I can generate your project.")
+                return
+
+        set_status(job_id, "running", "reasoning", "Drafting the PRD and design guidelines…")
+        plan = await run_reasoning_step(prompt, effective_pt, effective_prefs)
+        job["plan"] = plan
+        job["plan_summary"] = plan.get("plan_summary")
+        job["plan_text"] = _format_plan_text(plan)
+        job["plan_message"] = _build_plan_message(plan)
+        job["plan_ready_at"] = _now_ts()
+        job["plan_confirmed"] = False
+        mark_step_complete(job_id, "reasoning", True)
+
+        set_status(job_id, "running", "plan_review", "Plan ready. Confirm to continue.")
+        job["status"] = "plan_ready"
+        job["step"] = "plan_review"
+        job["message"] = (
+            "The reasoning agent produced a PRD and design checklist. "
+            "Please review and confirm to proceed."
+        )
+        add_chat_message(job_id, f"ðŸš€ Reasoning plan ready:\n{job['plan_message']}")
+
+    except HTTPException as e:
+        set_status(job_id, "error", "error", "Failed.", {"error": str(e.detail)})
+        job["status"] = "error"
+        job["error"] = str(e.detail)
+        add_chat_message(job_id, f"âŒ {str(e.detail)}", {"error": True})
+
+    except Exception as e:
+        set_status(job_id, "error", "error", "Failed.", {"error": str(e)})
+        job["status"] = "error"
+        job["error"] = str(e)
+        add_chat_message(job_id, f"âŒ An error occurred: {str(e)}", {"error": True})
+
+
 @router.post("/generate/clarify", response_model=ClarifyResponse)
 async def generate_clarify(req: ClarifyRequest, user=Depends(get_current_user)):
     if (req.project_type or "").lower().strip() != "any":
@@ -535,7 +680,7 @@ async def start_generation(req: GenerateRequest, background_tasks: BackgroundTas
     JOB_STATUS[job_id] = init_job_state(job_id, payload, user["id"])
 
     add_chat_message(job_id, "🚀 Starting your project generation...")
-    background_tasks.add_task(_generation_worker, job_id, user)
+    background_tasks.add_task(_plan_worker, job_id, user)
     return {"job_id": job_id}
 
 
@@ -594,7 +739,9 @@ async def get_generation_status(job_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Job not found")
 
     if job["status"] in {"queued", "running"}:
-        if (_now_ts() - job["started_at"]) > JOB_TIMEOUT_SECONDS:
+        step = (job.get("step") or "").lower()
+        preview_in_progress = step.startswith("preview")
+        if not preview_in_progress and (_now_ts() - job["started_at"]) > JOB_TIMEOUT_SECONDS:
             job["status"] = "error"
             job["step"] = "failed"
             job["error"] = "Generation timed out."
@@ -627,6 +774,20 @@ async def get_generation_status(job_id: str, user=Depends(get_current_user)):
 
         "started_at": job.get("started_at"),
         "updated_at": job.get("updated_at"),
+        "plan": job.get("plan"),
+        "plan_summary": job.get("plan_summary"),
+        "plan_message": job.get("plan_message"),
+        "plan_text": job.get("plan_text"),
+        "plan_ready_at": job.get("plan_ready_at"),
+        "plan_confirmed": job.get("plan_confirmed"),
+        "plan_confirmation_at": job.get("plan_confirmation_at"),
+        "test_report": job.get("test_report"),
+        "security_stats": job.get("security_stats"),
+        "final_reasoning": job.get("final_reasoning"),
+        "final_reasoning_message": job.get("final_reasoning_message"),
+        "final_confirmation": job.get("final_confirmation"),
+        "build_result": job.get("build_result"),
+        "preview_id": job.get("preview_id"),
     }
 
 
@@ -667,85 +828,106 @@ async def continue_generation(job_id: str, answers: Dict[str, Any], background_t
     job["updated_at"] = _now_ts()
 
     add_chat_message(job_id, "📝 Got your answers! Resuming generation...")
-    background_tasks.add_task(_generation_worker, job_id, user)
+    background_tasks.add_task(_plan_worker, job_id, user)
     return {"status": "resumed"}
 
 
-async def _generation_worker(job_id: str, user: dict):
-    job = JOB_STATUS[job_id]
+@router.post("/generate/plan/{job_id}/confirm")
+async def confirm_plan(job_id: str, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
+    job = JOB_STATUS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if str(job.get("user_id")) != str(user["id"]):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not job.get("plan"):
+        raise HTTPException(status_code=400, detail="Plan not ready yet")
+    if job.get("plan_confirmed"):
+        raise HTTPException(status_code=400, detail="Plan already confirmed")
+
+    job["plan_confirmed"] = True
+    job["plan_confirmation_at"] = _now_ts()
+    mark_step_complete(job_id, "plan_review", True)
+    job["status"] = "running"
+    job["step"] = "generating"
+    job["message"] = "Plan confirmed. Generating code…"
+    add_chat_message(job_id, "âœ… Plan confirmed. Code agent starting…")
+    background_tasks.add_task(_execution_worker, job_id, user)
+    return {"status": "started"}
+
+
+@router.post("/generate/final/confirm/{job_id}")
+async def confirm_final_review(job_id: str, user=Depends(get_current_user)):
+    job = JOB_STATUS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if str(job.get("user_id")) != str(user["id"]):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not job.get("final_reasoning"):
+        raise HTTPException(status_code=400, detail="Final review not ready")
+    if job.get("final_confirmation"):
+        raise HTTPException(status_code=400, detail="Already confirmed")
+
+    job["final_confirmation"] = {
+        "user_id": user["id"],
+        "timestamp": _now_iso(),
+    }
+    mark_step_complete(job_id, "final_review", True)
+    set_status(job_id, "done", "done", "Final review confirmed.")
+    job["message"] = "Final review confirmed. Project ready."
+    add_chat_message(job_id, "âœ… Final review confirmed. Mission complete.")
+    return {"status": "confirmed"}
+
+
+async def _execution_worker(job_id: str, user: dict):
+    job = JOB_STATUS.get(job_id)
+    if not job:
+        return
+
     t0 = _now_ts()
-
-    set_status(job_id, "running", "preflight", "Analyzing prompt…")
-
-    payload = job["payload"]
-    prompt = payload["prompt"]
-    project_type = payload["project_type"]
-    preferences = payload.get("preferences")
+    payload = job.get("payload") or {}
+    prompt = str(job.get("effective_prompt") or payload.get("prompt") or "")
+    project_type = (
+        str(job.get("effective_project_type") or payload.get("project_type") or "fullstack")
+    ).lower().strip()
+    preferences = job.get("effective_preferences") or payload.get("preferences") or {}
+    plan_text = str(job.get("plan_text") or "")
+    plan_summary = job.get("plan_summary")
+    plan_message = job.get("plan_message")
 
     gen: Optional[Generation] = None
     files: List[Dict[str, str]] = []
+    test_report: Optional[Dict[str, Any]] = None
+    security_stats: Dict[str, Any] = {}
 
     async with SessionLocal() as db:
         try:
-            analysis = preflight_analyze(prompt, project_type, preferences)
-            mark_step_complete(job_id, "preflight", True)
-
-            effective_pt = (
-                    analysis.derived.get("effective_project_type")
-                    or project_type
-                    or "fullstack"
-            ).lower().strip()
-
-            effective_prefs = (
-                    analysis.derived.get("effective_preferences")
-                    or preferences
-                    or {}
-            )
-
-            job["effective_project_type"] = effective_pt
-            job["effective_prompt"] = prompt
-
-            if (project_type or "").lower().strip() == "any":
-                set_status(job_id, "running", "clarifying", "Clarifying intent…", {"project_type": effective_pt})
-                clar = normalize_clarify(await clarify_with_ai(prompt, "any"))
-                if clar.needs_clarification:
-                    job["status"] = "clarify"
-                    job["step"] = "clarify"
-                    job["message"] = "Clarification required."
-                    job["questions"] = clar.questions
-                    add_chat_message(job_id, "🤔 I need some clarification before I can generate your project.")
-                    return
-
             gen = Generation(
                 id=str(uuid.uuid4()),
                 user_id=user["id"],
                 prompt=prompt,
-                project_type=effective_pt,
+                project_type=project_type,
                 status="running",
                 created_at=datetime.utcnow(),
             )
             db.add(gen)
             await db.commit()
 
-            set_status(job_id, "running", "generating", "Generating code…", {"project_type": effective_pt})
-            add_chat_message(job_id, f"🎨 Creating a {effective_pt} project…")
+            set_status(job_id, "running", "generating", "Generating code…", {"project_type": project_type})
+            add_chat_message(job_id, "✨ Reasoning confirmed. Code agent is writing the project…")
 
-            raw = await generate_code_with_ai(prompt, effective_pt, effective_prefs)
+            raw = await run_code_agent(prompt, project_type, preferences, plan_text)
 
             try:
                 result = _normalize_ai_result(raw)
             except AIJSONError as e:
-                # Clean, clear failure (and prevents hanging jobs)
-                snippet = ""
-                if isinstance(raw, str):
-                    snippet = raw[:2000]
+                snippet = raw[:2000] if isinstance(raw, str) else ""
                 job["status"] = "error"
                 job["step"] = "generating"
                 job["error"] = f"AI output invalid JSON: {str(e)}"
                 job["message"] = "Generation failed: invalid AI JSON."
-                add_chat_message(job_id, "❌ AI output invalid JSON. Retrying generation usually fixes this.", {"error": True})
+                add_chat_message(job_id, "âŒ AI output invalid JSON. Retrying generation usually fixes this.", {"error": True})
                 if snippet:
-                    add_chat_message(job_id, f"🧾 Raw snippet (first 2k chars):\n{snippet}", {"error": True})
+                    add_chat_message(job_id, f"ðŸ§¾ Raw snippet (first 2k chars):\n{snippet}", {"error": True})
                 if gen:
                     try:
                         gen.status = "error"
@@ -756,25 +938,32 @@ async def _generation_worker(job_id: str, user: dict):
                         pass
                 return
 
-            files = result.get("files", []) or []
+            files = result.get("files") or []
             job["files"] = files
             mark_step_complete(job_id, "generating", True, {"file_count": len(files)})
-            add_chat_message(job_id, f"✨ Generated {len(files)} files!")
+            add_chat_message(job_id, f"âœ¨ Generated {len(files)} files!")
 
             set_status(job_id, "running", "patching", "Patching files…")
-            files = patch_generated_project(files, effective_prefs)
+            files = patch_generated_project(files, preferences)
             job["files"] = files
             mark_step_complete(job_id, "patching", True)
 
-            set_status(job_id, "running", "validating", "Validating output…")
-            validation_errors = validate_node_openai(files) or []
-            mark_step_complete(job_id, "validating", True, {"validation_errors": len(validation_errors)})
+            set_status(job_id, "running", "testing", "Running tests and validations…")
+            test_report = await run_test_agent(files)
+            job["test_report"] = test_report
+            validation_errors = len(test_report.get("validation_errors") or []) if test_report else 0
+            mark_step_complete(job_id, "testing", True, {"validation_errors": validation_errors})
+            if validation_errors:
+                add_chat_message(job_id, f"⚠️ Validation returned {validation_errors} warning(s).")
 
             set_status(job_id, "running", "security_check", "Running security analysis…")
-            security_findings, security_stats = check_project_security(files)
-            job["security_findings"] = security_findings
+            security_result = await run_security_agent(files)
+            findings = security_result.get("security_findings") or []
+            security_stats = security_result.get("security_stats") or {}
+            job["security_findings"] = findings
+            job["security_stats"] = security_stats
 
-            if security_findings and int(security_stats.get("auto_fixable", 0) or 0) > 0:
+            if findings and int(security_stats.get("auto_fixable", 0) or 0) > 0:
                 set_status(
                     job_id,
                     "running",
@@ -782,19 +971,18 @@ async def _generation_worker(job_id: str, user: dict):
                     "Auto-fixing security issues…",
                     {"fix_count": int(security_stats.get("auto_fixable", 0) or 0)}
                 )
-                files, applied_security_fixes = apply_security_fixes(files, security_findings)
+                files, applied_security_fixes = apply_security_fixes(files, findings)
                 job["files"] = files
                 job["applied_fixes"] = _as_list_safe(job.get("applied_fixes")) + _as_list_safe(applied_security_fixes)
                 mark_step_complete(job_id, "fixing", True)
 
-            # ✅ FIX: geef GEEN int door onder 'security_findings' (message generator verwacht iterable)
             mark_step_complete(
                 job_id,
                 "security_check",
                 True,
                 {
-                    "security_findings": security_findings,                 # lijst (iterable)
-                    "security_findings_count": len(security_findings or []) # count apart
+                    "security_findings": findings,
+                    "security_findings_count": len(findings),
                 }
             )
 
@@ -806,10 +994,10 @@ async def _generation_worker(job_id: str, user: dict):
                 id=project_id,
                 user_id=user["id"],
                 prompt=prompt,
-                project_type=effective_pt,
+                project_type=project_type,
                 name=result.get("name", "Generated Project"),
                 description=result.get("description", ""),
-                validation_errors={"items": validation_errors},
+                validation_errors={"items": test_report.get("validation_errors") if test_report else []},
                 created_at=now,
             )
             db.add(project)
@@ -833,7 +1021,7 @@ async def _generation_worker(job_id: str, user: dict):
                 chat_messages=job.get("chat_messages", []),
                 screenshots=[],
                 applied_fixes=job.get("applied_fixes", []),
-                security_findings=security_findings,
+                security_findings=job.get("security_findings", []),
                 final_status="success",
                 created_at=now,
                 updated_at=now,
@@ -845,16 +1033,36 @@ async def _generation_worker(job_id: str, user: dict):
             gen.duration_ms = int((_now_ts() - t0) * 1000)
             await db.commit()
 
-            mark_step_complete(job_id, "saving", True)
-
             job["project_id"] = project_id
-            set_status(job_id, "done", "done", "Generated. Click Preview to build & verify runtime.")
-            add_chat_message(job_id, "✅ Generated. Click Preview to build & verify runtime.")
+            mark_step_complete(job_id, "saving", True)
+            add_chat_message(job_id, "âœ… Project saved. Building preview…")
+
+            await _preview_worker(job_id)
+
+            set_status(job_id, "running", "final_review", "Final reasoning review…")
+            job["status"] = "review_pending"
+            job["step"] = "final_review"
+            job["message"] = "Final reasoning review ready. Confirm to finish."
+            final_reasoning = await run_final_reasoning_step(
+                prompt=prompt,
+                project_type=project_type,
+                preferences=preferences,
+                plan_summary=plan_summary,
+                plan_message=plan_message,
+                files_count=len(files),
+                test_report=test_report,
+                security_stats=security_stats,
+                preview_summary=job.get("preview_summary"),
+                build_result=job.get("build_result"),
+            )
+            job["final_reasoning"] = final_reasoning
+            job["final_reasoning_message"] = json.dumps(final_reasoning, ensure_ascii=False, indent=2)
+            add_chat_message(job_id, f"🧭 Final reasoning review ready:\\n{job['final_reasoning_message']}")
 
         except HTTPException as e:
             set_status(job_id, "error", "error", "Failed.", {"error": str(e.detail)})
             job["error"] = str(e.detail)
-            add_chat_message(job_id, f"❌ {str(e.detail)}", {"error": True})
+            add_chat_message(job_id, f"âŒ {str(e.detail)}", {"error": True})
             if gen:
                 try:
                     gen.status = "error"
@@ -867,7 +1075,7 @@ async def _generation_worker(job_id: str, user: dict):
         except Exception as e:
             set_status(job_id, "error", "error", "Failed.", {"error": str(e)})
             job["error"] = str(e)
-            add_chat_message(job_id, f"❌ An error occurred: {str(e)}", {"error": True})
+            add_chat_message(job_id, f"âŒ An error occurred: {str(e)}", {"error": True})
             if gen:
                 try:
                     gen.status = "error"
@@ -876,3 +1084,5 @@ async def _generation_worker(job_id: str, user: dict):
                     await db.commit()
                 except Exception:
                     pass
+
+

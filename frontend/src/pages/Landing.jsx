@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Navbar } from '@/components/Navbar';
@@ -106,6 +106,7 @@ const stats = [
 export default function Landing() {
   const [activeFeature, setActiveFeature] = useState(0);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const demoRef = useRef(null);
 
   useEffect(() => {
     const handleMouseMove = (e) => {
@@ -181,12 +182,15 @@ export default function Landing() {
                     <ArrowRight className="w-5 h-5 ml-2" />
                   </Button>
                 </Link>
-                <Link to="/login" data-testid="hero-login">
-                  <Button variant="outline" className="w-full sm:w-auto glass-card border-white/10 text-white text-lg px-8 py-6 hover:bg-white/5">
-                    <Play className="w-5 h-5 mr-2" />
-                    Watch Demo
-                  </Button>
-                </Link>
+                <Button
+                  variant="outline"
+                  className="w-full sm:w-auto glass-card border-white/10 text-white text-lg px-8 py-6 hover:bg-white/5"
+                  onClick={() => demoRef.current?.scrollIntoView({ behavior: 'smooth' })}
+                  data-testid="hero-watch-demo"
+                >
+                  <Play className="w-5 h-5 mr-2" />
+                  Watch Demo
+                </Button>
               </div>
 
               {/* Trust badges */}
