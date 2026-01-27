@@ -38,3 +38,13 @@ class ClarifyResponse(BaseModel):
     needs_clarification: bool
     questions: List[str] = Field(default_factory=list)
     derived: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PlanFeedbackRequest(BaseModel):
+    message: str
+
+    @validator("message")
+    def validate_message(cls, value: str):
+        if not value or not value.strip():
+            raise ValueError("Feedback message cannot be empty")
+        return value.strip()

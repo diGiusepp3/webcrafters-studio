@@ -30,7 +30,7 @@ from backend.models.project import Project
 from backend.models.project_file import ProjectFile
 from backend.models.preview_report import PreviewReport
 from backend.models.credit_ledger import CreditLedger
-from backend.schemas.generate import GenerateRequest, ClarifyRequest, ClarifyResponse
+from backend.schemas.generate import GenerateRequest, ClarifyRequest, ClarifyResponse, PlanFeedbackRequest
 from backend.services.preflight_service import preflight_analyze
 from backend.services.ai_service import clarify_with_ai
 from backend.agents.reasoning_agent import run_reasoning_step, run_final_reasoning_step
@@ -853,6 +853,33 @@ async def confirm_plan(job_id: str, background_tasks: BackgroundTasks, user=Depe
     add_chat_message(job_id, "âœ… Plan confirmed. Code agent starting…")
     background_tasks.add_task(_execution_worker, job_id, user)
     return {"status": "started"}
+
+
+@router.post("/generate/plan/{job_id}/feedback")
+async def submit_plan_feedback(
+    job_id: str,
+    payload: PlanFeedbackRequest,
+    user=Depends(get_current_user),
+):
+    job = JOB_STATUS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if str(job.get("user_id")) != str(user["id"]):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if job.get("plan_confirmed"):
+        raise HTTPException(status_code=400, detail="Plan already confirmed")
+    if job.get("status") != "plan_ready":
+        raise HTTPException(status_code=400, detail="Plan feedback is only accepted while the plan is pending review")
+
+    user_message = create_chat_message(payload.message, "user", {"topic": "plan_feedback"})
+    ack_message = create_chat_message(
+        "✍️ Noted your note about the plan. Confirm when you are ready to begin coding.",
+        "agent",
+        {"topic": "plan_feedback_ack"},
+    )
+    job["chat_messages"] = job.get("chat_messages", []) + [user_message, ack_message]
+    job["updated_at"] = _now_ts()
+    return {"status": "recorded"}
 
 
 @router.post("/generate/final/confirm/{job_id}")

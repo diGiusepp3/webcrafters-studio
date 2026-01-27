@@ -137,6 +137,8 @@ export default function Generator() {
   const [planConfirmed, setPlanConfirmed] = useState(false);
   const [planReadyAt, setPlanReadyAt] = useState(null);
   const [planConfirming, setPlanConfirming] = useState(false);
+  const [planFeedback, setPlanFeedback] = useState("");
+  const [planFeedbackSending, setPlanFeedbackSending] = useState(false);
   const [finalReasoningData, setFinalReasoningData] = useState(null);
   const [finalReasoningMessage, setFinalReasoningMessage] = useState("");
   const [finalConfirming, setFinalConfirming] = useState(false);
@@ -197,6 +199,14 @@ export default function Generator() {
     { id: 'security_check', title: 'Security Check', icon: <Shield className="w-4 h-4" />, description: 'Scanning for security vulnerabilities and best practices' },
     { id: 'saving', title: 'Saving Project', icon: <Package className="w-4 h-4" />, description: 'Persisting your project to the database' },
   ], []);
+
+  const planMessageSections = useMemo(() => {
+    if (!planMessageText) return [];
+    return planMessageText
+      .split(/\n\s*\n+/)
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+  }, [planMessageText]);
 
   // Scroll chat to bottom when user is near the end
   useEffect(() => {
@@ -455,11 +465,12 @@ export default function Generator() {
     void pollAgentEvents(jobId);
   };
 
-  const addChatMessage = (message, role = 'agent', status = null) => {
+  const addChatMessage = (message, role = 'agent', status = null, extraMetadata = {}) => {
     setChatMessages(prev => [...prev, {
+      role,
       message,
       timestamp: new Date().toISOString(),
-      metadata: { role, status }
+      metadata: { role, status, ...extraMetadata }
     }]);
   };
 
@@ -647,6 +658,22 @@ export default function Generator() {
       setError("Unable to confirm the plan. Please try again.");
     } finally {
       setPlanConfirming(false);
+    }
+  };
+
+  const handleSendPlanFeedback = async () => {
+    if (!currentJobId || !planFeedback.trim()) return;
+    setPlanFeedbackSending(true);
+    const note = planFeedback.trim();
+    setPlanFeedback("");
+    try {
+      await api.post(`/generate/plan/${currentJobId}/feedback`, { message: note });
+      addChatMessage(note, "user", null, { plan_feedback: true });
+      setStatusText("Plan feedback recorded. Confirm when ready.");
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Unable to send plan feedback.");
+    } finally {
+      setPlanFeedbackSending(false);
     }
   };
 
@@ -1872,15 +1899,68 @@ export default function Generator() {
                 {planConfirmed && <span className="text-xs text-emerald-400">Plan accepted</span>}
               </div>
             </div>
-            {planMessageText ? (
-              <pre className="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm text-gray-100 whitespace-pre-wrap max-h-[280px] overflow-y-auto">
-                {planMessageText}
-              </pre>
+            {planSummaryText && (
+              <p className="text-sm text-gray-300 max-w-3xl">
+                {planSummaryText}
+              </p>
+            )}
+            {planMessageSections.length > 0 ? (
+              <div className="rounded-2xl border border-white/10 bg-black/40 p-4 space-y-3 max-h-[280px] overflow-y-auto">
+                {planMessageSections.map((section, index) => (
+                  <p
+                    key={`plan-msg-${index}`}
+                    className="text-sm text-gray-100 leading-relaxed whitespace-pre-line"
+                  >
+                    {section}
+                  </p>
+                ))}
+              </div>
             ) : (
-              <p className="text-sm text-gray-500">The reasoning agent is still drafting the PRD and user problem statement.</p>
+              <p className="text-sm text-gray-500">
+                The reasoning agent is still drafting the PRD and user problem statement.
+              </p>
+            )}
+            {jobStatus === "plan_ready" && !planConfirmed && (
+              <div className="rounded-2xl border border-white/10 bg-[#090d16]/70 p-4 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold text-white">Need to adjust the plan?</p>
+                  <p className="text-xs text-gray-400">
+                    Drop a quick note and we’ll log it in the agent chat before you confirm the next step.
+                  </p>
+                </div>
+                <Textarea
+                  value={planFeedback}
+                  onChange={(e) => setPlanFeedback(e.target.value)}
+                  placeholder="Share feedback or ask a question about the plan..."
+                  className="min-h-[80px] max-h-[120px] resize-none bg-black/40 border-white/10 text-white text-sm placeholder:text-gray-500"
+                  disabled={planFeedbackSending}
+                />
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-gray-400">
+                    Messages appear in the agent chat below for traceability.
+                  </span>
+                  <Button
+                    size="sm"
+                    onClick={handleSendPlanFeedback}
+                    disabled={planFeedbackSending || !planFeedback.trim()}
+                    className="btn-primary h-9"
+                  >
+                    {planFeedbackSending ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Sending...
+                      </span>
+                    ) : (
+                      "Send note"
+                    )}
+                  </Button>
+                </div>
+              </div>
             )}
             {planReadyAt && (
-              <p className="text-xs text-gray-500">Plan ready at {new Date(planReadyAt).toLocaleTimeString()}</p>
+              <p className="text-xs text-gray-500">
+                Plan ready at {new Date(planReadyAt).toLocaleTimeString()}
+              </p>
             )}
             {securityFindings.length > 0 && (
               <div className="rounded-2xl border border-cyan-500/30 bg-black/40 p-4">

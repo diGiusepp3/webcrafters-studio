@@ -48,3 +48,7 @@ This file tracks changes that were actually implemented in this repo.
 - Replaced the legacy split-grid generator page with a single-column, chat-first workspace that surfaces the plan card, timeline, agent chat, final reasoning, and preview status in the center of the page.
 - The hero card now highlights live agent status/progress and consolidates template/project-type controls, prompt textarea, error/clarification messaging, and the generate button into one immersive section.
 - Added map-style cards for plan confirmation, timeline visualization, final reasoning checklist, and preview build state while keeping the preview iframe and diff modal exactly where they belong.
+
+## Plan Review Interaction Enhancements
+- Added `/generate/plan/{job_id}/feedback` so plan-stage comments are captured in the job's chat history and acknowledged before coding begins.
+- Reformatted the plan message panel into spaced segments, surfaced the summary, and added a textarea so you can send plan-specific notes before hitting “Confirm plan.”
