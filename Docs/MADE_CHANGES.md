@@ -52,3 +52,9 @@ This file tracks changes that were actually implemented in this repo.
 ## Plan Review Interaction Enhancements
 - Added `/generate/plan/{job_id}/feedback` so plan-stage comments are captured in the job's chat history and acknowledged before coding begins.
 - Reformatted the plan message panel into spaced segments, surfaced the summary, and added a textarea so you can send plan-specific notes before hitting “Confirm plan.”
+
+## Plan Review Recovery + Agent Chat Input
+- Hardened the generator polling loop so transient network errors no longer kill the interval or event stream, which previously left the UI stuck on “Connection interrupted; retrying…” without plan controls.
+- Persisted the active generation job id in `localStorage` and added an auto-recovery effect that reloads the job state (including `plan_ready`) after a refresh or a polling interruption.
+- Added a plan-stage input directly inside the “Agent Chat” card so you can talk to the reasoning agent and send plan feedback even when the plan panel is off-screen.
+- Added a “Refresh” button on the agent chat card to force a status sync when the network is flaky.

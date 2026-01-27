@@ -68,6 +68,7 @@ export default function Generator() {
   // Mode detection
   const projectId = searchParams.get("projectId") || location.state?.projectId;
   const isEditMode = !!projectId;
+  const ACTIVE_JOB_STORAGE_KEY = "activeGenerationJobId";
 
   // ===== STATE =====
   // Create mode
@@ -148,6 +149,8 @@ export default function Generator() {
   // Chat input for modifications
   const [chatInput, setChatInput] = useState("");
   const [modifying, setModifying] = useState(false);
+  const [agentChatInput, setAgentChatInput] = useState("");
+  const [agentChatSending, setAgentChatSending] = useState(false);
 
   // Clarify
   const [clarifyJobId, setClarifyJobId] = useState(null);
@@ -188,6 +191,7 @@ export default function Generator() {
   const previewFixAttemptsRef = useRef(0);
   const lastAgentStepRef = useRef("");
   const pollRetryRef = useRef(0);
+  const recoverAttemptedRef = useRef(false);
 
   // Progress steps
   const progressSteps = useMemo(() => [
@@ -207,6 +211,9 @@ export default function Generator() {
       .map((segment) => segment.trim())
       .filter(Boolean);
   }, [planMessageText]);
+
+  const planReviewPending = jobStatus === "plan_ready" || jobStep === "plan_review";
+  const planInteractionEnabled = Boolean(currentJobId) && planReviewPending && !planConfirmed;
 
   // Scroll chat to bottom when user is near the end
   useEffect(() => {
@@ -404,6 +411,12 @@ export default function Generator() {
   // CREATE MODE: Generation
   // ==========================================
   const resetState = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+    recoverAttemptedRef.current = false;
     setError("");
     setClarifyJobId(null);
     setClarifyQuestions([]);
@@ -503,8 +516,93 @@ export default function Generator() {
     });
   };
 
+  const applyJobUpdate = (data) => {
+    const {
+      status, step,
+      timeline: jobTimeline,
+      chat_messages: jobChatMessages,
+      security_findings: jobSecurityFindings,
+      plan_summary: planSummary,
+      plan_message: planMessage,
+      plan_confirmed: planConfirmedFlag,
+      plan_ready_at: planReadyAt,
+      final_reasoning: finalReasoning,
+      final_reasoning_message: finalReasoningMessage,
+      final_confirmation: finalConfirmation,
+      build_result: buildResult,
+      preview_url: previewUrlFromJob,
+    } = data || {};
+
+    if (jobTimeline && jobTimeline.length > 0) {
+      setTimeline(jobTimeline.map(t => ({
+        ...t,
+        isComplete: t.status === 'success',
+        isRunning: t.status === 'running',
+        isError: t.status === 'error',
+      })));
+      const completedSteps = jobTimeline.filter(t => t.status === 'success').length;
+      setProgress((completedSteps / progressSteps.length) * 100);
+    }
+
+    if (jobChatMessages && jobChatMessages.length > 0) {
+      setChatMessages(jobChatMessages.map(m => ({
+        ...m,
+        metadata: m.metadata || { role: 'agent' }
+      })));
+    }
+
+    if (jobSecurityFindings) {
+      setSecurityFindings(jobSecurityFindings);
+      setSecurityScanRan(true);
+    }
+
+    if (previewUrlFromJob) {
+      setPreviewUrl(previewUrlFromJob);
+    }
+
+    setPlanSummary(planSummary || "");
+    setPlanMessage(planMessage || "");
+    setPlanConfirmed(Boolean(planConfirmedFlag));
+    setPlanReadyAt(planReadyAt || null);
+    setJobStatus(status || "");
+    setJobStep(step || "");
+    setFinalReasoning(finalReasoning || null);
+    setFinalReasoningMessage(finalReasoningMessage || "");
+    setFinalConfirmed(Boolean(finalConfirmation));
+    setBuildResult(buildResult || null);
+
+    if (status === "plan_ready" || status === "clarify" || status === "done" || status === "error") {
+      setLoading(false);
+    }
+    if (status === "plan_ready") {
+      setStatusText("Plan ready. Review it and confirm to continue.");
+    }
+
+    return { status, step };
+  };
+
+  const handleRefreshStatus = async () => {
+    if (!currentJobId) return;
+    setStatusText("Refreshing job status...");
+    try {
+      const res = await api.get(`/generate/status/${currentJobId}`);
+      applyJobUpdate(res.data);
+      pollRetryRef.current = 0;
+      if (!pollRef.current) {
+        startPolling(currentJobId);
+      }
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Unable to refresh the job status.");
+    }
+  };
+
   const startPolling = (jobId) => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
     setCurrentJobId(jobId);
+    localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, jobId);
     startEventPolling(jobId);
     let lastStep = '';
     let lastFilesCount = 0;
@@ -513,58 +611,15 @@ export default function Generator() {
       try {
         const res = await api.get(`/generate/status/${jobId}`);
         const {
-          status, step, project_id, questions, error: jobError,
-          timeline: jobTimeline, chat_messages: jobChatMessages,
-          security_findings: jobSecurityFindings, message, preview_url,
-          files, applied_fixes,
-          plan_summary: planSummary,
-          plan_message: planMessage,
-          plan_confirmed: planConfirmedFlag,
-          plan_ready_at: planReadyAt,
-          final_reasoning: finalReasoning,
-          final_reasoning_message: finalReasoningMessage,
-          final_confirmation: finalConfirmation,
-          build_result: buildResult,
+          project_id,
+          questions,
+          error: jobError,
+          message,
+          files,
         } = res.data;
-
-        // Update timeline with proper structure
-        if (jobTimeline && jobTimeline.length > 0) {
-          setTimeline(jobTimeline.map(t => ({
-            ...t,
-            isComplete: t.status === 'success',
-            isRunning: t.status === 'running',
-            isError: t.status === 'error',
-          })));
-          const completedSteps = jobTimeline.filter(t => t.status === 'success').length;
-          setProgress((completedSteps / progressSteps.length) * 100);
-        }
+        const { status, step } = applyJobUpdate(res.data);
 
         pollRetryRef.current = 0;
-
-        // Update chat messages from server
-        if (jobChatMessages && jobChatMessages.length > 0) {
-          setChatMessages(jobChatMessages.map(m => ({
-            ...m,
-            metadata: m.metadata || { role: 'agent' }
-          })));
-        }
-
-        // Security findings
-        if (jobSecurityFindings) {
-          setSecurityFindings(jobSecurityFindings);
-          setSecurityScanRan(true);
-        }
-        if (preview_url) setPreviewUrl(preview_url);
-        setPlanSummary(planSummary || "");
-        setPlanMessage(planMessage || "");
-        setPlanConfirmed(Boolean(planConfirmedFlag));
-        setPlanReadyAt(planReadyAt || null);
-        setJobStatus(status || "");
-        setJobStep(step || "");
-        setFinalReasoning(finalReasoning || null);
-        setFinalReasoningMessage(finalReasoningMessage || "");
-        setFinalConfirmed(Boolean(finalConfirmation));
-        setBuildResult(buildResult || null);
 
         // Live file updates - show files as they're generated
         if (files && files.length > lastFilesCount) {
@@ -601,6 +656,7 @@ export default function Generator() {
         if (status === "clarify") {
           stopEventPolling();
           clearInterval(pollRef.current);
+          pollRef.current = null;
           setLoading(false);
           setClarifyJobId(jobId);
           setClarifyQuestions(questions || []);
@@ -615,6 +671,8 @@ export default function Generator() {
         if (status === "done") {
           stopEventPolling();
           clearInterval(pollRef.current);
+          pollRef.current = null;
+          localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
           setProgress(100);
           setIsTyping(false);
           addChatMessage("✅ Your project is ready! You can now preview, edit, or download it.", 'agent', 'success');
@@ -624,6 +682,8 @@ export default function Generator() {
         if (status === "error") {
           stopEventPolling();
           clearInterval(pollRef.current);
+          pollRef.current = null;
+          localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
           setLoading(false);
           setStatusText("");
           setIsTyping(false);
@@ -636,15 +696,39 @@ export default function Generator() {
           return;
         }
         console.error("Generation poll failed", e);
-        clearInterval(pollRef.current);
-        stopEventPolling();
-        setLoading(false);
-        setStatusText("");
-        const detail = e?.response?.data?.detail || e?.message || "Connection lost. Please try again.";
-        setError(detail);
+        pollRetryRef.current = 3;
+        const detail = e?.response?.data?.detail || e?.message || "Connection interrupted; retrying...";
+        setStatusText(detail);
       }
     }, 1500);
   };
+
+  /* eslint-disable react-hooks/exhaustive-deps */
+  useEffect(() => {
+    if (isEditMode || currentJobId || recoverAttemptedRef.current) return;
+    const savedJobId = localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
+    if (!savedJobId) return;
+    recoverAttemptedRef.current = true;
+
+    const recover = async () => {
+      try {
+        setCurrentJobId(savedJobId);
+        startEventPolling(savedJobId);
+        const res = await api.get(`/generate/status/${savedJobId}`);
+        const { status } = applyJobUpdate(res.data);
+        if (status === "done" || status === "error") {
+          localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+          return;
+        }
+        startPolling(savedJobId);
+      } catch (err) {
+        localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+      }
+    };
+
+    void recover();
+  }, [isEditMode, currentJobId]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const confirmPlan = async () => {
     if (!currentJobId || planConfirmed) return;
@@ -661,19 +745,39 @@ export default function Generator() {
     }
   };
 
+  const sendPlanNote = async (note) => {
+    if (!currentJobId) return;
+    await api.post(`/generate/plan/${currentJobId}/feedback`, { message: note });
+    addChatMessage(note, "user", null, { plan_feedback: true });
+    setStatusText("Plan feedback recorded. Confirm when ready.");
+    await handleRefreshStatus();
+  };
+
   const handleSendPlanFeedback = async () => {
     if (!currentJobId || !planFeedback.trim()) return;
     setPlanFeedbackSending(true);
     const note = planFeedback.trim();
     setPlanFeedback("");
     try {
-      await api.post(`/generate/plan/${currentJobId}/feedback`, { message: note });
-      addChatMessage(note, "user", null, { plan_feedback: true });
-      setStatusText("Plan feedback recorded. Confirm when ready.");
+      await sendPlanNote(note);
     } catch (err) {
       setError(err?.response?.data?.detail || "Unable to send plan feedback.");
     } finally {
       setPlanFeedbackSending(false);
+    }
+  };
+
+  const handleSendAgentChat = async () => {
+    if (!planInteractionEnabled || !agentChatInput.trim()) return;
+    setAgentChatSending(true);
+    const note = agentChatInput.trim();
+    setAgentChatInput("");
+    try {
+      await sendPlanNote(note);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Unable to send your message to the reasoning agent.");
+    } finally {
+      setAgentChatSending(false);
     }
   };
 
@@ -1597,7 +1701,7 @@ export default function Generator() {
                       <ChatMessage
                         key={i}
                         message={msg}
-                        isUser={msg.metadata?.role === 'user'}
+                        isUser={msg.metadata?.role === 'user' || msg.role === 'user'}
                         isThinking={msg.metadata?.status === 'thinking'}
                       />
                     ))
@@ -1891,7 +1995,7 @@ export default function Generator() {
                 </h2>
               </div>
               <div className="flex items-center gap-2">
-                {jobStatus === "plan_ready" && (
+                {planReviewPending && !planConfirmed && (
                   <Button size="sm" onClick={confirmPlan} disabled={planConfirming || planConfirmed}>
                     {planConfirming ? "Confirming..." : planConfirmed ? "Plan confirmed" : "Confirm plan"}
                   </Button>
@@ -1920,7 +2024,7 @@ export default function Generator() {
                 The reasoning agent is still drafting the PRD and user problem statement.
               </p>
             )}
-            {jobStatus === "plan_ready" && !planConfirmed && (
+            {planInteractionEnabled && (
               <div className="rounded-2xl border border-white/10 bg-[#090d16]/70 p-4 space-y-3">
                 <div>
                   <p className="text-sm font-semibold text-white">Need to adjust the plan?</p>
@@ -1981,9 +2085,16 @@ export default function Generator() {
         <section className="rounded-3xl border border-white/10 bg-[#05090f]/80 p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-white">Agent Chat</h3>
-            <span className="text-xs text-gray-400">{chatMessages.length} messages</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-400">{chatMessages.length} messages</span>
+              {currentJobId && (
+                <Button size="sm" variant="outline" onClick={handleRefreshStatus}>
+                  Refresh
+                </Button>
+              )}
+            </div>
           </div>
-          <div className="max-h-[340px] w-full space-y-3 overflow-y-auto pr-1">
+          <div ref={chatScrollRef} className="max-h-[340px] w-full space-y-3 overflow-y-auto pr-1">
             {chatMessages.length === 0 ? (
               <p className="text-sm text-gray-500">The conversation will appear here once the agent engages.</p>
             ) : (
@@ -1991,13 +2102,45 @@ export default function Generator() {
                 <ChatMessage
                   key={`${msg.timestamp}-${idx}`}
                   message={msg}
-                  isUser={msg.metadata?.role === 'user'}
+                  isUser={msg.metadata?.role === 'user' || msg.role === 'user'}
                   isThinking={msg.metadata?.status === 'thinking'}
                 />
               ))
             )}
             <div ref={chatEndRef} />
           </div>
+          {planInteractionEnabled && (
+            <div className="mt-4 border-t border-white/10 pt-4 space-y-2">
+              <p className="text-xs uppercase tracking-[0.3em] text-gray-500">Reasoning Agent Reply</p>
+              <Textarea
+                value={agentChatInput}
+                onChange={(e) => setAgentChatInput(e.target.value)}
+                placeholder="Approve the plan or suggest changes..."
+                className="min-h-[80px] max-h-[140px] resize-none bg-black/40 border-white/10 text-white text-sm placeholder:text-gray-500"
+                disabled={agentChatSending}
+              />
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-gray-400">
+                  Your note is logged before the code agent starts.
+                </span>
+                <Button
+                  size="sm"
+                  onClick={handleSendAgentChat}
+                  disabled={agentChatSending || !agentChatInput.trim()}
+                  className="btn-primary h-9"
+                >
+                  {agentChatSending ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Sending...
+                    </span>
+                  ) : (
+                    "Send to agent"
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="grid gap-6 md:grid-cols-2">

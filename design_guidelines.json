@@ -146,27 +146,44 @@
       }
     },
     "tech_stack_specifics": {
-      "framework": "React (JS/JSX)",
-      "styling": "Tailwind CSS",
-      "ui_library": "Shadcn UI",
-      "icons_library": "lucide-react",
-      "file_extension": ".js / .jsx",
-      "rules": [
-        "Use 'export const Component = ...' for components",
-        "Use 'export default function Page() ...' for pages",
-        "Do not use TypeScript interfaces/types",
-        "Use prop-types if validation is strictly needed, otherwise keep it flexible"
+      "principle": "Choose the simplest stack that can deliver the requested experience with the most reliable preview build.",
+      "stack_selection_heuristics": [
+        "Default to static HTML + Tailwind CSS + minimal vanilla JS for marketing sites, landing pages, portfolios, and brochure websites.",
+        "Use PHP (with light routing and server-rendered templates) when the user clearly needs forms, simple CMS-like editing, or server-side rendering without heavy JavaScript frameworks.",
+        "Use React only when the request explicitly demands rich client state, complex interactivity, or a React-specific ecosystem requirement.",
+        "Avoid React/Vite for simple sites because it increases preview build complexity and failure risk.",
+        "Prefer fewer dependencies and fewer build steps whenever possible to maximize preview success."
+      ],
+      "preview_first_rules": [
+        "Every project must be previewable with a deterministic build path.",
+        "Generated projects must include an obvious entry point (for example: index.html, public/index.php, or a clear app bootstrap file).",
+        "Never require hidden environment configuration to render a basic preview.",
+        "Keep scripts predictable and avoid unnecessary tooling when a static build will do."
+      ],
+      "styling_defaults": [
+        "Tailwind CSS is preferred when available, but plain CSS is acceptable if it reduces build complexity.",
+        "Animations should enhance the first viewport without blocking content rendering.",
+        "Ensure a clear header, hero, primary CTA, and footer are present unless the user explicitly asks otherwise."
+      ],
+      "react_rules_when_used": [
+        "Use React function components and keep them small and focused.",
+        "Split UI into clear sections and favor composition over deep prop drilling.",
+        "Avoid TypeScript unless the repository is already TypeScript-first.",
+        "Keep React-specific choices justified by the product requirements."
       ]
     },
     "universal_guidelines": [
-      "Dark Mode is mandatory and default.",
-      "Avoid gradients on text unless it's a very large headline.",
+      "The first 5 seconds must deliver a WOW effect: striking hero, clear value prop, and a visible primary CTA above the fold.",
+      "Dark mode is mandatory by default unless the user explicitly requests a different aesthetic.",
+      "Avoid gradients on text unless it is a very large headline.",
       "Never use pure black (#000000) for cards; use tinted dark greys.",
-      "Always add hover states to interactive elements.",
+      "Always add hover states and visible focus states to interactive elements.",
       "Use 'data-testid' for all interactive elements.",
       "Ensure contrast ratios meet WCAG AA standards.",
-      "Mobile-first responsive design."
+      "Mobile-first responsive design with clean spacing rhythm.",
+      "Navigation links must target real sections or routes.",
+      "Do not advance from planning to coding without an explicit user confirmation step."
     ]
   },
-  "instructions_to_main_agent": "You are building a high-end, developer-focused code generation platform. Adhere strictly to the 'Electric & Neon' aesthetic. Use the provided image URLs for placeholders. Implement the 'Control Room' grid for the main dashboard. Ensure the chat interface feels like a powerful terminal. Use the 'Outfit' font for headings and 'JetBrains Mono' for all code-related text."
+  "instructions_to_main_agent": "You are building a high-end, developer-focused code generation platform. Adhere strictly to the 'Electric & Neon' aesthetic while keeping the workflow chat-first and plan-gated. Use the provided image URLs for placeholders. Implement the 'Control Room' grid for the main dashboard. Ensure the center workspace communicates the active agent, the current step, and why it matters. Use the 'Outfit' font for headings and 'JetBrains Mono' for all code-related text."
 }

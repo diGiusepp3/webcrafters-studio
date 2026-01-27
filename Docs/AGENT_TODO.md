@@ -1,5 +1,8 @@
 # Agent TODO
 
+- [ ] Re-test the full plan-review workflow on production: ensure `plan_ready` always shows a confirm button plus a chat input, even after a transient polling failure or a page refresh.
+- [ ] Add a dedicated “Reject plan / Regenerate reasoning” action so the reasoning agent can iterate without requiring manual API calls.
+- [ ] Audit the polling + event-stream lifecycle for leaked intervals or duplicate polling when recovering from `localStorage`.
 - [ ] Capture and log every generator action (dev bypass checks, credit lookups, security scans) so we can diagnose why certain IDs still hit credit gating.
 - [ ] Record AI chat input/output/responses (timestamps + messages) and feed that into the event/timeline work to improve autonomous heuristics.
 - [ ] Expand preview/poll/test coverage for generation jobs, including long-polling events, security scan triggers, and auto-apply diff flows.
