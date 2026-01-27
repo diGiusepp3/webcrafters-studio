@@ -151,6 +151,7 @@ export default function Generator() {
   const [clarifyJobId, setClarifyJobId] = useState(null);
   const [clarifyQuestions, setClarifyQuestions] = useState([]);
   const [clarifyAnswers, setClarifyAnswers] = useState({});
+  const clarifyRef = useRef(null);
 
   // Templates
   const [showTemplates, setShowTemplates] = useState(false);
@@ -222,6 +223,14 @@ export default function Generator() {
       behavior: 'smooth',
     });
   }, [chatMessages, autoScrollChat, activeTab, loading]);
+
+  useEffect(() => {
+    if (!clarifyQuestions.length) return;
+    clarifyRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [clarifyQuestions.length]);
 
   // ==========================================
   // EDIT MODE: Load existing project
@@ -1813,13 +1822,15 @@ export default function Generator() {
                   </div>
                 )}
                 {clarifyQuestions.length > 0 && (
-                  <ClarifyDialog
-                    questions={clarifyQuestions}
-                    answers={clarifyAnswers}
-                    onAnswerChange={(key, value) => setClarifyAnswers((prev) => ({ ...prev, [key]: value }))}
-                    onSubmit={submitClarify}
-                    isSubmitting={loading}
-                  />
+                  <div ref={clarifyRef}>
+                    <ClarifyDialog
+                      questions={clarifyQuestions}
+                      answers={clarifyAnswers}
+                      onAnswerChange={(key, value) => setClarifyAnswers((prev) => ({ ...prev, [key]: value }))}
+                      onSubmit={submitClarify}
+                      isSubmitting={loading}
+                    />
+                  </div>
                 )}
               </div>
               <Button
