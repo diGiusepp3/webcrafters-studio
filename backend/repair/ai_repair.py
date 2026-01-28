@@ -1,5 +1,7 @@
 # FILE: /backend/repair/ai_repair.py
 import json
+
+from backend.services.openai_model_service import REPAIR_MODEL
 from typing import Any
 
 REPAIR_SYSTEM_PROMPT = """
@@ -188,7 +190,7 @@ def _validate_and_normalize_project_json(data: Any) -> dict[str, Any]:
 
 async def repair_generated_project(client_ai, original_result: dict, errors: list[str]) -> dict:
     response = client_ai.chat.completions.create(
-        model="gpt-4.1-mini",
+        model=REPAIR_MODEL,
         messages=[
             {"role": "system", "content": REPAIR_SYSTEM_PROMPT},
             {

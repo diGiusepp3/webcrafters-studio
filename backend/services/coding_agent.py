@@ -4,16 +4,14 @@
 Live Coding Agent - The core AI agent that generates and modifies code.
 (OpenAI v4 version - direct API calls)
 """
-import os
 import json
 import uuid
 import asyncio
 from datetime import datetime
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
-from openai import OpenAI
-
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+from backend.core.config import get_openai_client
+from backend.services.openai_model_service import CODE_MODEL
 
 SYSTEM_PROMPT = """You are an expert full-stack developer AI assistant. You help users build web applications by:
 1. Understanding their requirements
@@ -56,7 +54,8 @@ class CodingAgentSession:
         self.preview_url: Optional[str] = None
         self.created_at = datetime.utcnow()
 
-        self.client = OpenAI(api_key=OPENAI_API_KEY)
+        # Read OPENAI_API_KEY from backend/.env via config.get_openai_client().
+        self.client = get_openai_client()
 
     def add_message(self, role: str, content: str):
         self.history.append({"role": role, "content": content})
@@ -71,7 +70,7 @@ class CodingAgentSession:
 
     def _openai_call(self, messages: list) -> str:
         response = self.client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model=CODE_MODEL,
             messages=messages,
             temperature=0.2
         )

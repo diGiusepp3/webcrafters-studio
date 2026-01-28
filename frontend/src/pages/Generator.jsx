@@ -133,13 +133,14 @@ export default function Generator() {
 
   const [jobStatus, setJobStatus] = useState("");
   const [jobStep, setJobStep] = useState("");
-  const [planSummaryText, setPlanSummaryText] = useState("");
+  const [planSummary, setPlanSummary] = useState("");
   const [planMessageText, setPlanMessageText] = useState("");
   const [planConfirmed, setPlanConfirmed] = useState(false);
   const [planReadyAt, setPlanReadyAt] = useState(null);
   const [planConfirming, setPlanConfirming] = useState(false);
   const [planFeedback, setPlanFeedback] = useState("");
   const [planFeedbackSending, setPlanFeedbackSending] = useState(false);
+  const [finalReasoning, setFinalReasoning] = useState(null);
   const [finalReasoningData, setFinalReasoningData] = useState(null);
   const [finalReasoningMessage, setFinalReasoningMessage] = useState("");
   const [finalConfirming, setFinalConfirming] = useState(false);
@@ -192,6 +193,9 @@ export default function Generator() {
   const lastAgentStepRef = useRef("");
   const pollRetryRef = useRef(0);
   const recoverAttemptedRef = useRef(false);
+  const [pendingRecoveryJobId, setPendingRecoveryJobId] = useState(null);
+  const [pendingRecoveryStatus, setPendingRecoveryStatus] = useState("");
+  const [pendingRecoveryStep, setPendingRecoveryStep] = useState("");
 
   // Progress steps
   const progressSteps = useMemo(() => [
@@ -466,6 +470,10 @@ export default function Generator() {
         }
       } catch (err) {
         if (!eventPollingActiveRef.current) break;
+        if (err?.response?.status === 404) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          continue;
+        }
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
@@ -474,6 +482,7 @@ export default function Generator() {
   const startEventPolling = (jobId) => {
     if (!jobId) return;
     stopEventPolling();
+    eventCursorRef.current = null;
     eventPollingActiveRef.current = true;
     void pollAgentEvents(jobId);
   };
@@ -561,13 +570,14 @@ export default function Generator() {
     }
 
     setPlanSummary(planSummary || "");
-    setPlanMessage(planMessage || "");
+    setPlanMessageText(planMessage || "");
     setPlanConfirmed(Boolean(planConfirmedFlag));
     setPlanReadyAt(planReadyAt || null);
     setJobStatus(status || "");
     setJobStep(step || "");
     setFinalReasoning(finalReasoning || null);
     setFinalReasoningMessage(finalReasoningMessage || "");
+    setFinalReasoningData(finalReasoning || null);
     setFinalConfirmed(Boolean(finalConfirmation));
     setBuildResult(buildResult || null);
 
@@ -703,6 +713,22 @@ export default function Generator() {
     }, 1500);
   };
 
+  const discardPendingGeneration = () => {
+    localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+    setPendingRecoveryJobId(null);
+    setPendingRecoveryStatus("");
+    setPendingRecoveryStep("");
+  };
+
+  const handleResumePendingGeneration = () => {
+    if (!pendingRecoveryJobId) return;
+    setStatusText("Resuming your previous generation...");
+    setLoading(true);
+    const jobIdToResume = pendingRecoveryJobId;
+    discardPendingGeneration();
+    startPolling(jobIdToResume);
+  };
+
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (isEditMode || currentJobId || recoverAttemptedRef.current) return;
@@ -712,16 +738,16 @@ export default function Generator() {
 
     const recover = async () => {
       try {
-        setCurrentJobId(savedJobId);
-        startEventPolling(savedJobId);
         const res = await api.get(`/generate/status/${savedJobId}`);
-        const { status } = applyJobUpdate(res.data);
+        const { status, step } = res.data;
         if (status === "done" || status === "error") {
           localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
           return;
         }
-        startPolling(savedJobId);
-      } catch (err) {
+        setPendingRecoveryJobId(savedJobId);
+        setPendingRecoveryStatus(status || "");
+        setPendingRecoveryStep(step || "");
+      } catch {
         localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
       }
     };
@@ -1900,6 +1926,21 @@ export default function Generator() {
             <Progress value={Math.min(progress, 100)} className="h-2 rounded-full mt-3" />
           </div>
 
+          {pendingRecoveryJobId && (
+            <div className="rounded-3xl border border-yellow-400/30 bg-[#1f1a10]/80 p-4 mb-5 space-y-3">
+              <p className="text-sm text-yellow-200">
+                A previous generation is still in progress ({pendingRecoveryStatus || "unknown"} / {pendingRecoveryStep || "pending"}). You can resume it or discard it before creating a new project.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={handleResumePendingGeneration} className="btn-primary">
+                  Resume previous run
+                </Button>
+                <Button size="sm" variant="ghost" onClick={discardPendingGeneration}>
+                  Discard draft
+                </Button>
+              </div>
+            </div>
+          )}
           {showTemplates ? (
             <TemplateSelector
               onSelect={handleTemplateSelect}
@@ -1952,17 +1993,6 @@ export default function Generator() {
                     </div>
                   </div>
                 )}
-                {clarifyQuestions.length > 0 && (
-                  <div ref={clarifyRef}>
-                    <ClarifyDialog
-                      questions={clarifyQuestions}
-                      answers={clarifyAnswers}
-                      onAnswerChange={(key, value) => setClarifyAnswers((prev) => ({ ...prev, [key]: value }))}
-                      onSubmit={submitClarify}
-                      isSubmitting={loading}
-                    />
-                  </div>
-                )}
               </div>
               <Button
                 onClick={handleGenerate}
@@ -1981,17 +2011,30 @@ export default function Generator() {
                   </span>
                 )}
               </Button>
+              {clarifyQuestions.length > 0 && (
+                <div ref={clarifyRef} className="mt-4">
+                  <ClarifyDialog
+                    questions={clarifyQuestions}
+                    answers={clarifyAnswers}
+                    onAnswerChange={(key, value) => setClarifyAnswers((prev) => ({ ...prev, [key]: value }))}
+                    onSubmit={submitClarify}
+                    isSubmitting={loading}
+                  />
+                </div>
+              )}
             </div>
           )}
         </section>
 
         <section className="space-y-4">
-          <div className="rounded-3xl border border-white/10 bg-[#0b1220]/80 p-6 space-y-4">
+          <div className="relative">
+            <div className="rounded-3xl p-[1px] bg-gradient-to-r from-[#ff4aa8] via-[#ff69a8] to-[#ff2299] shadow-[0_0_25px_rgba(255,26,123,0.65)]">
+              <div className="rounded-3xl border border-white/10 bg-[#0b1220]/80 p-6 space-y-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-gray-500">Reasoning Plan</p>
                 <h2 className="text-2xl font-semibold text-white">
-                  {planSummaryText || "Awaiting the reasoning agent's plan..."}
+                  {planSummary || "Awaiting the reasoning agent's plan..."}
                 </h2>
               </div>
               <div className="flex items-center gap-2">
@@ -2003,9 +2046,9 @@ export default function Generator() {
                 {planConfirmed && <span className="text-xs text-emerald-400">Plan accepted</span>}
               </div>
             </div>
-            {planSummaryText && (
+            {planSummary && (
               <p className="text-sm text-gray-300 max-w-3xl">
-                {planSummaryText}
+                {planSummary}
               </p>
             )}
             {planMessageSections.length > 0 ? (
@@ -2039,25 +2082,42 @@ export default function Generator() {
                   className="min-h-[80px] max-h-[120px] resize-none bg-black/40 border-white/10 text-white text-sm placeholder:text-gray-500"
                   disabled={planFeedbackSending}
                 />
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <span className="text-xs text-gray-400">
                     Messages appear in the agent chat below for traceability.
                   </span>
-                  <Button
-                    size="sm"
-                    onClick={handleSendPlanFeedback}
-                    disabled={planFeedbackSending || !planFeedback.trim()}
-                    className="btn-primary h-9"
-                  >
-                    {planFeedbackSending ? (
-                      <span className="flex items-center gap-2">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        Sending...
-                      </span>
-                    ) : (
-                      "Send note"
-                    )}
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={confirmPlan}
+                      disabled={planConfirming || planConfirmed}
+                      className="btn-secondary h-9"
+                    >
+                      {planConfirming ? (
+                        <span className="flex items-center gap-2">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Confirming plan
+                        </span>
+                      ) : (
+                        "Accept plan & start generation"
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleSendPlanFeedback}
+                      disabled={planFeedbackSending || !planFeedback.trim()}
+                      className="btn-primary h-9"
+                    >
+                      {planFeedbackSending ? (
+                        <span className="flex items-center gap-2">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Sending...
+                        </span>
+                      ) : (
+                        "Send note"
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -2072,6 +2132,8 @@ export default function Generator() {
                 <SecurityFindings findings={securityFindings} />
               </div>
             )}
+              </div>
+            </div>
           </div>
           <div className="rounded-3xl border border-white/10 bg-[#080d18]/80 p-6">
             <div className="flex items-center justify-between mb-3">
@@ -2082,9 +2144,10 @@ export default function Generator() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-white/10 bg-[#05090f]/80 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-white">Agent Chat</h3>
+          {!(planReviewPending && !planConfirmed) && (
+            <section className="rounded-3xl border border-white/10 bg-[#05090f]/80 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white">Agent Chat</h3>
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-400">{chatMessages.length} messages</span>
               {currentJobId && (
@@ -2141,7 +2204,8 @@ export default function Generator() {
               </div>
             </div>
           )}
-        </section>
+          </section>
+          )}
 
         <section className="grid gap-6 md:grid-cols-2">
           <div className="rounded-3xl border border-white/10 bg-[#0a0f1a]/80 p-6 space-y-4">

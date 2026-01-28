@@ -10,6 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from backend.services.dev_user_service import get_dev_user_ids, is_dev_user_id
+from backend.core.config import get_openai_client
+from backend.services.openai_model_service import DEV_ASSISTANT_MODEL
 
 router = APIRouter(prefix="/api/codeassistant", tags=["codeassistant"])
 
@@ -30,7 +32,8 @@ from backend.services.dev_user_service import get_dev_user_ids, is_dev_user_id
 DEV_USER_IDS = get_dev_user_ids()
 
 JWT_SECRET = os.getenv("JWT_SECRET", "")
-DEV_ASSISTANT_MODEL = os.getenv("DEV_ASSISTANT_MODEL", "gpt-4.1-mini")
+# Prefer centralized model routing (still overridable by backend/.env).
+# Note: request body may still override this model per call.
 
 MAX_READ_BYTES = int(os.getenv("DEV_FS_MAX_READ_BYTES", "200000"))          # 200 KB
 MAX_CHAT_FILE_BYTES = int(os.getenv("DEV_CHAT_MAX_FILE_BYTES", "60000"))   # 60 KB per file
@@ -314,9 +317,7 @@ def ai_chat(body: ChatRequest, claims: Dict[str, Any] = Depends(require_dev)):
     # Call OpenAI (works with openai>=1.x; fallback for older)
     try:
         from openai import OpenAI  # type: ignore
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-        if not client.api_key:
-            raise HTTPException(status_code=500, detail="OPENAI_API_KEY missing")
+        client = get_openai_client()
 
         resp = client.chat.completions.create(
             model=model,

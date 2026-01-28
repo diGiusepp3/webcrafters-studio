@@ -184,7 +184,7 @@ async def get_subscription_plans():
                     price_monthly=9.99,
                     credits_monthly=10000,
                     max_output_tokens=16000,
-                    allowed_models=["gpt-4.1-mini", "gpt-4.1", "gpt-5-mini"],
+                    allowed_models=["gpt-4.1-mini", "gpt-4.1", "gpt-4o", "gpt-5-mini"],
                     max_generations_per_day=30
                 ),
                 SubscriptionPlanResponse(
@@ -194,7 +194,7 @@ async def get_subscription_plans():
                     price_monthly=24.99,
                     credits_monthly=35000,
                     max_output_tokens=32000,
-                    allowed_models=["gpt-4.1-mini", "gpt-4.1", "gpt-5-mini", "gpt-5", "codex"],
+                    allowed_models=["gpt-4.1-mini", "gpt-4.1", "gpt-4o", "gpt-5-mini", "gpt-5", "codex"],
                     max_generations_per_day=60
                 ),
                 SubscriptionPlanResponse(

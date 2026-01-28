@@ -10,6 +10,8 @@ export default function Credits() {
   const [balance, setBalance] = useState(null);
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [purchasingPlan, setPurchasingPlan] = useState("");
+  const [purchaseMessage, setPurchaseMessage] = useState("");
 
   useEffect(() => {
     load();
@@ -33,6 +35,31 @@ export default function Credits() {
     }
   }
 
+  const handlePurchase = async (plan) => {
+    setPurchasingPlan(plan.id);
+    setPurchaseMessage("");
+    try {
+      const response = await api.post('/credits/purchase', {
+        package_id: plan.id,
+        payment_method: 'stripe',
+      });
+
+      const paymentId = response?.data?.payment_id;
+      if (!paymentId) {
+        throw new Error('Missing payment ID');
+      }
+
+      const completion = await api.post(`/credits/purchase/${paymentId}/complete`);
+      setPurchaseMessage(completion.data?.message || 'Credits added successfully!');
+      await load();
+    } catch (error) {
+      console.error(error);
+      setPurchaseMessage('Unable to complete the purchase right now. Please try again.');
+    } finally {
+      setPurchasingPlan('');
+    }
+  };
+
   return (
       <div className="min-h-screen bg-[#030712]">
         <Navbar />
@@ -49,6 +76,9 @@ export default function Credits() {
             <p className="text-gray-400">
               No free tier. Generation requires credits.
             </p>
+            {purchaseMessage && (
+                <p className="text-green-400 text-sm mt-3">{purchaseMessage}</p>
+            )}
           </div>
 
           {/* Balance */}
@@ -90,8 +120,12 @@ export default function Credits() {
                     </li>
                   </ul>
 
-                  <Button className="w-full btn-primary">
-                    Buy / Upgrade
+                  <Button
+                      className="w-full btn-primary"
+                      disabled={Boolean(purchasingPlan && purchasingPlan !== plan.id)}
+                      onClick={() => handlePurchase(plan)}
+                  >
+                    {purchasingPlan === plan.id ? 'Buying…' : 'Buy / Upgrade'}
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </div>

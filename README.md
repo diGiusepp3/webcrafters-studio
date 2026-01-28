@@ -50,6 +50,15 @@ pip install -r requirements.txt
 # 🔑 REQUIRED: Your OpenAI API Key
 OPENAI_API_KEY=sk-your-openai-api-key-here
 
+# Optional: model routing by stage (defaults to gpt-4.1-mini)
+# Planning / PRD (Reasoning agent)
+OPENAI_PLAN_MODEL=gpt-5-mini
+# Code generation (Code agent)
+OPENAI_CODE_MODEL=gpt-4o
+# Clarification + final review (override if you want)
+# OPENAI_CLARIFY_MODEL=gpt-4.1-mini
+# OPENAI_FINAL_MODEL=gpt-5-mini
+
 # Security (change in production!)
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 

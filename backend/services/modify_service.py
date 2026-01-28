@@ -6,6 +6,7 @@ import json
 from typing import Dict, Any, List, Optional
 
 from backend.core.config import get_openai_client
+from backend.services.openai_model_service import MODIFY_MODEL
 
 # Lazy initialization
 _openai_client = None
@@ -148,7 +149,7 @@ Task:
 
     def _call():
         return _get_client().chat.completions.create(
-            model="gpt-4.1-mini",
+            model=MODIFY_MODEL,
             messages=[
                 {"role": "system", "content": MODIFY_SYSTEM_PROMPT},
                 {"role": "user", "content": user_msg},

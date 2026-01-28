@@ -19,6 +19,7 @@ from backend.services.prompt_service import (
     build_final_reasoning_system_prompt,
     build_final_reasoning_user_prompt,
 )
+from backend.services.openai_model_service import CLARIFY_MODEL, PLAN_MODEL, CODE_MODEL, FINAL_MODEL
 
 # Lazy initialization - only create client when needed
 _openai_client = None
@@ -129,7 +130,7 @@ Conversation:
 
     def _call():
         return get_client().chat.completions.create(
-            model="gpt-4.1-mini",
+            model=CLARIFY_MODEL,
             messages=[
                 {"role": "system", "content": clarify_system_prompt},
                 {"role": "user", "content": user_msg},
@@ -166,7 +167,7 @@ async def run_reasoning_agent(
 
     def _call():
         return get_client().chat.completions.create(
-            model="gpt-4.1-mini",
+            model=PLAN_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_msg},
@@ -214,7 +215,7 @@ async def run_final_reasoning_agent(
 
     def _call():
         return get_client().chat.completions.create(
-            model="gpt-4.1-mini",
+            model=FINAL_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_msg},
@@ -248,7 +249,7 @@ async def generate_code_with_ai(
 
     def _call():
         return get_client().chat.completions.create(
-            model="gpt-4.1-mini",
+            model=CODE_MODEL,
             messages=[
                 {"role": "system", "content": generator_system_prompt},
                 {"role": "user", "content": user_msg},

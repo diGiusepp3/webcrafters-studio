@@ -33,6 +33,7 @@ from backend.models.credit_ledger import CreditLedger
 from backend.schemas.generate import GenerateRequest, ClarifyRequest, ClarifyResponse, PlanFeedbackRequest
 from backend.services.preflight_service import preflight_analyze
 from backend.services.ai_service import clarify_with_ai
+from backend.services.openai_model_service import PLAN_MODEL, CODE_MODEL, CLARIFY_MODEL, FINAL_MODEL
 from backend.agents.reasoning_agent import run_reasoning_step, run_final_reasoning_step
 from backend.agents.code_agent import run_code_agent
 from backend.agents.test_agent import run_test_agent
@@ -71,6 +72,8 @@ PREVIEW_MAX_LOG_BYTES = int(os.getenv("PREVIEW_MAX_LOG_BYTES", "16000"))
 # Runtime error policy: treat console error as failure unless allowlisted
 RUNTIME_ERROR_STRICT = (os.getenv("PREVIEW_RUNTIME_ERROR_STRICT", "true").strip().lower() in ("1", "true", "yes"))
 
+GENERATION_CREDIT_COST_CENTS = int(os.getenv("GENERATION_CREDIT_COST_CENTS", "1000"))
+
 
 def _now_ts() -> float:
     return time.time()
@@ -98,6 +101,30 @@ def _format_plan_text(plan: Dict[str, Any]) -> str:
     summary = plan.get("plan_summary")
     if summary:
         lines.append(f"Plan summary: {summary}")
+
+    pages = plan.get("pages") or []
+    if isinstance(pages, list) and pages:
+        lines.append("Pages:")
+        for page in pages[:12]:
+            if not isinstance(page, dict):
+                continue
+            name = page.get("name") or ""
+            route = page.get("route") or ""
+            purpose = page.get("purpose") or ""
+            lines.append(f"- {name} ({route}): {purpose}".strip())
+
+    endpoints = plan.get("api_endpoints") or []
+    if isinstance(endpoints, list) and endpoints:
+        lines.append("API endpoints:")
+        for ep in endpoints[:20]:
+            if not isinstance(ep, dict):
+                continue
+            method = ep.get("method") or ""
+            path = ep.get("path") or ""
+            purpose = ep.get("purpose") or ""
+            auth = ep.get("auth") or ""
+            lines.append(f"- {method} {path} ({auth}): {purpose}".strip())
+
     for idx, step in enumerate(plan.get("plan") or [], start=1):
         lines.append(f"{idx}. {step.get('title')}: {step.get('description')}")
     checks = plan.get("checks") or []
@@ -115,8 +142,33 @@ def _build_plan_message(plan: Dict[str, Any]) -> str:
         "Reasoning agent produced a plan.",
         f"Problem statement: {plan.get('problem_statement') or 'N/A'}",
         f"Design guidelines summary: {plan.get('design_guidelines') or 'N/A'}",
-        "Plan steps:"
+        "Pages:"
     ]
+    pages = plan.get("pages") or []
+    if isinstance(pages, list) and pages:
+        for page in pages[:10]:
+            if not isinstance(page, dict):
+                continue
+            name = page.get("name") or ""
+            route = page.get("route") or ""
+            purpose = page.get("purpose") or ""
+            message.append(f"- {name} ({route}): {purpose}".strip())
+    else:
+        message.append("- N/A")
+
+    endpoints = plan.get("api_endpoints") or []
+    if isinstance(endpoints, list) and endpoints:
+        message.append("API endpoints:")
+        for ep in endpoints[:15]:
+            if not isinstance(ep, dict):
+                continue
+            method = ep.get("method") or ""
+            path = ep.get("path") or ""
+            purpose = ep.get("purpose") or ""
+            auth = ep.get("auth") or ""
+            message.append(f"- {method} {path} ({auth}): {purpose}".strip())
+
+    message.append("Plan steps:")
     for idx, step in enumerate(plan.get("plan") or [], start=1):
         message.append(f"{idx}. {step.get('title')}: {step.get('description')}")
     summary = plan.get("plan_summary")
@@ -610,6 +662,16 @@ async def _plan_worker(job_id: str, user: dict):
         job["effective_preferences"] = effective_prefs
         job["preflight_analysis"] = analysis
 
+        _emit_event(
+            job_id,
+            {
+                "type": "model_routing",
+                "title": "Model routing",
+                "detail": f"clarify={CLARIFY_MODEL}, plan={PLAN_MODEL}, code={CODE_MODEL}, final={FINAL_MODEL}",
+                "rationale": "Models are selected per stage (configurable via backend/.env).",
+            },
+        )
+
         if (project_type or "").lower().strip() == "any":
             set_status(job_id, "running", "clarifying", "Clarifying intent…", {"project_type": effective_pt})
             clar = normalize_clarify(await clarify_with_ai(prompt, "any"))
@@ -664,6 +726,8 @@ async def generate_clarify(req: ClarifyRequest, user=Depends(get_current_user)):
 async def start_generation(req: GenerateRequest, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     cleanup_jobs()
 
+    job_id = str(uuid.uuid4())
+
     DEV_USER_IDS = get_dev_user_ids()
     if not (DEV_USER_IDS and is_dev_user_id(user["id"])):
         async with SessionLocal() as db:
@@ -672,10 +736,22 @@ async def start_generation(req: GenerateRequest, background_tasks: BackgroundTas
                 .where(CreditLedger.user_id == user["id"])
             )
             balance_cents = int(r.scalar() or 0)
-        if balance_cents <= 0:
-            raise HTTPException(status_code=402, detail="No credits. Please purchase credits to generate.")
+            if balance_cents < GENERATION_CREDIT_COST_CENTS:
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Insufficient credits. Each generation costs {GENERATION_CREDIT_COST_CENTS} credits."
+                )
 
-    job_id = str(uuid.uuid4())
+            usage_entry = CreditLedger(
+                user_id=user["id"],
+                kind="usage",
+                amount_cents=-GENERATION_CREDIT_COST_CENTS,
+                ref_id=job_id,
+                created_at=datetime.utcnow()
+            )
+            db.add(usage_entry)
+            await db.commit()
+
     payload = {"prompt": req.prompt, "project_type": req.project_type, "preferences": req.preferences}
     JOB_STATUS[job_id] = init_job_state(job_id, payload, user["id"])
 
