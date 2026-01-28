@@ -728,29 +728,27 @@ async def start_generation(req: GenerateRequest, background_tasks: BackgroundTas
 
     job_id = str(uuid.uuid4())
 
-    DEV_USER_IDS = get_dev_user_ids()
-    if not (DEV_USER_IDS and is_dev_user_id(user["id"])):
-        async with SessionLocal() as db:
-            r = await db.execute(
-                select(func.coalesce(func.sum(CreditLedger.amount_cents), 0))
-                .where(CreditLedger.user_id == user["id"])
+    async with SessionLocal() as db:
+        r = await db.execute(
+            select(func.coalesce(func.sum(CreditLedger.amount_cents), 0))
+            .where(CreditLedger.user_id == user["id"])
+        )
+        balance_cents = int(r.scalar() or 0)
+        if balance_cents < GENERATION_CREDIT_COST_CENTS:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Insufficient credits. Each generation costs {GENERATION_CREDIT_COST_CENTS} credits."
             )
-            balance_cents = int(r.scalar() or 0)
-            if balance_cents < GENERATION_CREDIT_COST_CENTS:
-                raise HTTPException(
-                    status_code=402,
-                    detail=f"Insufficient credits. Each generation costs {GENERATION_CREDIT_COST_CENTS} credits."
-                )
 
-            usage_entry = CreditLedger(
-                user_id=user["id"],
-                kind="usage",
-                amount_cents=-GENERATION_CREDIT_COST_CENTS,
-                ref_id=job_id,
-                created_at=datetime.utcnow()
-            )
-            db.add(usage_entry)
-            await db.commit()
+        usage_entry = CreditLedger(
+            user_id=user["id"],
+            kind="usage",
+            amount_cents=-GENERATION_CREDIT_COST_CENTS,
+            ref_id=job_id,
+            created_at=datetime.utcnow()
+        )
+        db.add(usage_entry)
+        await db.commit()
 
     payload = {"prompt": req.prompt, "project_type": req.project_type, "preferences": req.preferences}
     JOB_STATUS[job_id] = init_job_state(job_id, payload, user["id"])

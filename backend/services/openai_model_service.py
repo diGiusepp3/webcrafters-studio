@@ -23,16 +23,16 @@ def model_from_env(env_name: str, default: str) -> str:
     return normalize_model_name(value)
 
 
-DEFAULT_MODEL = normalize_model_name(os.getenv("OPENAI_DEFAULT_MODEL", "gpt-4.1-mini"))
+DEFAULT_MODEL = normalize_model_name(os.getenv("OPENAI_DEFAULT_MODEL", "gpt-4o"))
 
 # Stage routing used by /api/generate.
-CLARIFY_MODEL = model_from_env("OPENAI_CLARIFY_MODEL", DEFAULT_MODEL)
-PLAN_MODEL = model_from_env("OPENAI_PLAN_MODEL", DEFAULT_MODEL)
-CODE_MODEL = model_from_env("OPENAI_CODE_MODEL", DEFAULT_MODEL)
+# Defaults align with: lightweight planning, stronger coding.
+CLARIFY_MODEL = model_from_env("OPENAI_CLARIFY_MODEL", "gpt-4.1-mini")
+PLAN_MODEL = model_from_env("OPENAI_PLAN_MODEL", "gpt-4.1-mini")
+CODE_MODEL = model_from_env("OPENAI_CODE_MODEL", "gpt-4o")
 FINAL_MODEL = model_from_env("OPENAI_FINAL_MODEL", PLAN_MODEL)
 
 # Other AI-assisted subsystems.
 REPAIR_MODEL = model_from_env("OPENAI_REPAIR_MODEL", CODE_MODEL)
 MODIFY_MODEL = model_from_env("OPENAI_MODIFY_MODEL", CODE_MODEL)
 DEV_ASSISTANT_MODEL = model_from_env("DEV_ASSISTANT_MODEL", DEFAULT_MODEL)
-

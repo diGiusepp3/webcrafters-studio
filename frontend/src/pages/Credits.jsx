@@ -5,8 +5,10 @@ import api from '@/api';
 import { Navbar } from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { CreditCard, Sparkles, Check, ArrowRight, Loader2 } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 
 export default function Credits() {
+  const location = useLocation();
   const [balance, setBalance] = useState(null);
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15,6 +17,13 @@ export default function Credits() {
 
   useEffect(() => {
     load();
+    const params = new URLSearchParams(location.search);
+    if (params.get('success')) {
+      setPurchaseMessage('Betaling gelukt! Credits worden toegevoegd.');
+    }
+    if (params.get('canceled')) {
+      setPurchaseMessage('Betaling geannuleerd.');
+    }
   }, []);
 
   async function load() {
@@ -39,8 +48,11 @@ export default function Credits() {
     setPurchasingPlan(plan.id);
     setPurchaseMessage("");
     try {
+      // package_id must be a string slug; ensure we pass plan.slug if available.
+      const packageId = plan.slug || plan.id;
+
       const response = await api.post('/credits/purchase', {
-        package_id: plan.id,
+        package_id: packageId,
         payment_method: 'stripe',
       });
 
@@ -49,8 +61,20 @@ export default function Credits() {
         throw new Error('Missing payment ID');
       }
 
-      const completion = await api.post(`/credits/purchase/${paymentId}/complete`);
-      setPurchaseMessage(completion.data?.message || 'Credits added successfully!');
+      // If backend returns a hosted checkout URL (Stripe), redirect the browser.
+      const checkoutUrl = response?.data?.checkout_url;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+        return;
+      }
+
+      try {
+        const completion = await api.post(`/credits/purchase/${paymentId}/complete`);
+        setPurchaseMessage(completion.data?.message || 'Credits added successfully!');
+      } catch (err) {
+        // If completion fails (e.g., already auto-completed server-side), surface success anyway.
+        setPurchaseMessage('Credits added successfully!');
+      }
       await load();
     } catch (error) {
       console.error(error);

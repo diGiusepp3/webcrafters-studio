@@ -1,4 +1,4 @@
-﻿USER REQUEST:
+USER REQUEST:
 {{USER_PROMPT}}
 
 PROJECT TYPE HINT:
@@ -7,7 +7,11 @@ PROJECT TYPE HINT:
 PREFERENCES (JSON):
 {{PREFERENCES_JSON}}
 
-Use the design guidelines and helper rulebook provided earlier. Analyze the request and produce the JSON schema described in the system prompt.
+Use the design guidelines and helper rulebook provided earlier. Analyze the request and produce the JSON schema described in the system prompt. When drafting pages, API endpoints, and steps, surface:
+- Brand feel (tone, color accents), primary audience, and the #1 CTA to emphasize.
+- Key data entities, sample attributes, and any integrations/auth implied.
+- Critical UX flows (list/detail, form with validation, dashboard/analytics if relevant).
+- Edge cases and state coverage (loading, empty, error, success).
 
 CLAUDE HELPER RULEBOOK:
 {{CLAUDE_RULES_SUMMARY}}

@@ -13,25 +13,36 @@ PLAN TO FOLLOW (DERIVED FROM REASONING AGENT):
 {{PLAN_TEXT}}
 
 EXECUTION PLAN (FOLLOW THIS EVEN IF USER IS VAGUE):
-- Deliver a complete, runnable project.
-- Ensure the first viewport has a WOW effect AND the project has depth (real multi-page flows).
-- Follow the reasoning plan's pages/routes and API outline.
-- Use strong layout structure AND multiple routed pages (not just a landing).
-- Use mock data and graceful fallbacks so the UI always renders even without a backend.
+- Deliver a COMPLETE, RUNNABLE project with real routed flows.
+- Make the first viewport WOW while still shipping depth (multi-page, data + forms).
+- Follow the reasoning plan's IA/routes and API outline exactly.
+- Use strong layout structure, shared AppShell, and consistent components.
+- Use mock data + graceful fallbacks so the UI ALWAYS renders without backend.
+- Add README + env examples + build.manifest.json aligned to structure.
 
 FRONTEND COMPLETENESS CHECKLIST:
 - Navigation links route to real pages and/or scroll to real sections.
-- Primary and secondary CTAs are present and visually distinct.
+- Primary and secondary CTAs are present and visually distinct above the fold.
 - Cards, grids, and sections have consistent spacing and alignment.
 - Typography scale is intentional (clear headline, subhead, body, captions).
-- The footer contains at least: brand, quick links, and a small legal/help row.
+- Footer contains brand + quick links + legal/help row.
+- Provide loading, empty, and error states for lists/details.
+- Add skeleton loaders for first paint; use toasts or inline alerts instead of console.log.
+- Reuse design tokens (colors/radii/shadows) and keep components consistent.
 
 MULTI-PAGE DEPTH CHECKLIST:
-- At least 4 meaningful routes/pages (or screens/commands for mobile/cli).
+- >=4 meaningful routes/pages (or screens/commands for mobile/cli).
 - One data-driven listing page with filtering + a detail view.
-- One form flow page with validation and good UX (errors, disabled states).
+- One form flow page with validation, errors, disabled/success states.
 - Shared layout (AppShell) and consistent components across pages.
+- Include a CRUD-like flow (create/edit/delete) using mock data when needed.
+
+TESTING & BUILD CHECKLIST:
+- Add Vitest unit tests for key components/utils and Playwright e2e smoke (for web).
+- Backend (if present): pytest for core endpoints/auth.
+- package.json scripts: dev, build, preview, test, lint, e2e (when applicable).
+- Ensure build.manifest.json matches actual folders.
 
 IMPORTANT:
 - Output ONLY valid JSON matching the required schema.
-- Include all files needed to run and build.
+- Include ALL files needed to run and build.

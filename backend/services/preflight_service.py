@@ -1,5 +1,6 @@
 # FILE: backend/services/preflight_service.py
 
+import json
 from typing import Any, Dict, Optional
 
 from backend.schemas.generate import ClarifyResponse
@@ -16,6 +17,9 @@ SITE_REQUIREMENTS: Dict[str, Any] = {
     "dark_mode_default": True,
     "tailwind_required": True,
     "minimum_external_images": 3,
+    "minimum_routes": 4,
+    "require_data_page": True,
+    "require_form_flow": True,
     "required_sections": [
         "header",
         "hero",
@@ -29,6 +33,7 @@ SITE_REQUIREMENTS: Dict[str, Any] = {
         "clear_primary_cta_visible_above_fold",
         "consistent_spacing_and_alignment",
         "hover_and_focus_states_on_interactive_elements",
+        "include_loading_empty_error_states",
     ],
 }
 
@@ -148,6 +153,33 @@ def preflight_analyze(prompt: str, project_type: str, preferences: Optional[Dict
         required_files.setdefault(
             "frontend/index.html",
             DEFAULT_VITE_INDEX_HTML_SEO,
+        )
+        # Ensure preview pipeline always has a manifest and env example hints.
+        required_files.setdefault(
+            "build.manifest.json",
+            json.dumps(
+                {
+                    "kind": "js",
+                    "web_root": "frontend",
+                    "framework": "vite",
+                    "package_manager": "npm",
+                    "out_dir": "dist",
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+            + "\n",
+        )
+        required_files.setdefault(
+            "frontend/.env.example",
+            "VITE_APP_NAME=Webcrafters App\nVITE_API_URL=http://localhost:8000\n",
+        )
+
+    if effective_project_type in {"backend", "fullstack"}:
+        required_files = effective_preferences.setdefault("required_files", {})
+        required_files.setdefault(
+            "backend/.env.example",
+            "OPENAI_API_KEY=your-key\nDATABASE_URL=sqlite:///./app.db\n",
         )
 
     derived = {
