@@ -14,6 +14,7 @@ export default function Credits() {
   const [loading, setLoading] = useState(true);
   const [purchasingPlan, setPurchasingPlan] = useState("");
   const [purchaseMessage, setPurchaseMessage] = useState("");
+  const [purchaseError, setPurchaseError] = useState("");
 
   useEffect(() => {
     load();
@@ -47,6 +48,7 @@ export default function Credits() {
   const handlePurchase = async (plan) => {
     setPurchasingPlan(plan.id);
     setPurchaseMessage("");
+    setPurchaseError("");
     try {
       // package_id must be a string slug; ensure we pass plan.slug if available.
       const packageId = plan.slug || plan.id;
@@ -78,7 +80,8 @@ export default function Credits() {
       await load();
     } catch (error) {
       console.error(error);
-      setPurchaseMessage('Unable to complete the purchase right now. Please try again.');
+      const msg = error?.response?.data?.detail || error?.message || 'Unable to complete the purchase right now. Please try again.';
+      setPurchaseError(msg);
     } finally {
       setPurchasingPlan('');
     }
@@ -102,6 +105,9 @@ export default function Credits() {
             </p>
             {purchaseMessage && (
                 <p className="text-green-400 text-sm mt-3">{purchaseMessage}</p>
+            )}
+            {purchaseError && (
+                <p className="text-red-400 text-sm mt-3">{purchaseError}</p>
             )}
           </div>
 

@@ -832,12 +832,14 @@ export default function Generator() {
       return;
     }
 
-    // ✅ CORRECT: check echte credits
+    // ✅ Real credit check using balance_cents from backend
     const res = await api.get("/credits/balance");
-
-    const credits = Number(res.data?.credits ?? 0);
-
-    if (credits <= 0) {
+    const balanceCents = Number(res.data?.balance_cents ?? 0);
+    if (Number.isNaN(balanceCents)) {
+      throw new Error("Kon het creditsaldo niet ophalen");
+    }
+    if (balanceCents < 1000) { // matches GENERATION_CREDIT_COST_CENTS default
+      setError("Onvoldoende credits. Koop een pakket om te genereren.");
       navigate("/credits");
       throw new Error("No credits");
     }
