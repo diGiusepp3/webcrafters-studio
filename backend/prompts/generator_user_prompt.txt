@@ -14,17 +14,23 @@ PLAN TO FOLLOW (DERIVED FROM REASONING AGENT):
 
 EXECUTION PLAN (FOLLOW THIS EVEN IF USER IS VAGUE):
 - Deliver a complete, runnable project.
-- If this is frontend-oriented, prioritize a single outstanding landing page.
-- Ensure the first viewport has a WOW effect.
-- Use strong layout structure: header -> hero -> features -> social proof -> CTA -> footer.
-- Use mock data and static content so the UI always renders.
+- Ensure the first viewport has a WOW effect AND the project has depth (real multi-page flows).
+- Follow the reasoning plan's pages/routes and API outline.
+- Use strong layout structure AND multiple routed pages (not just a landing).
+- Use mock data and graceful fallbacks so the UI always renders even without a backend.
 
 FRONTEND COMPLETENESS CHECKLIST:
-- Navigation links scroll to real sections.
+- Navigation links route to real pages and/or scroll to real sections.
 - Primary and secondary CTAs are present and visually distinct.
 - Cards, grids, and sections have consistent spacing and alignment.
 - Typography scale is intentional (clear headline, subhead, body, captions).
 - The footer contains at least: brand, quick links, and a small legal/help row.
+
+MULTI-PAGE DEPTH CHECKLIST:
+- At least 4 meaningful routes/pages (or screens/commands for mobile/cli).
+- One data-driven listing page with filtering + a detail view.
+- One form flow page with validation and good UX (errors, disabled states).
+- Shared layout (AppShell) and consistent components across pages.
 
 IMPORTANT:
 - Output ONLY valid JSON matching the required schema.
