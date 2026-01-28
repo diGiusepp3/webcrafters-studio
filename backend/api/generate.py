@@ -47,6 +47,7 @@ from backend.services.security_checker import apply_security_fixes
 from backend.services.fix_loop_service import run_fix_loop
 from backend.services.dev_user_service import get_dev_user_ids, is_dev_user_id
 from backend.validators.node_openai_validator import validate_node_openai
+from backend.models.payment import Payment
 
 # ✅ Use the robust JSON parser (same one as repair step)
 from backend.repair.ai_repair import _parse_ai_json as parse_ai_json, AIJSONError
@@ -73,6 +74,39 @@ PREVIEW_MAX_LOG_BYTES = int(os.getenv("PREVIEW_MAX_LOG_BYTES", "16000"))
 RUNTIME_ERROR_STRICT = (os.getenv("PREVIEW_RUNTIME_ERROR_STRICT", "true").strip().lower() in ("1", "true", "yes"))
 
 GENERATION_CREDIT_COST_CENTS = int(os.getenv("GENERATION_CREDIT_COST_CENTS", "1000"))
+
+
+async def reconcile_user_credits(db: SessionLocal, user_id: str) -> None:
+    """
+    Ensure each completed payment has a matching purchase ledger entry.
+    This backfills older payments that may lack ledger rows or used price instead of credit units.
+    """
+    payments = await db.execute(
+        select(Payment).where(Payment.user_id == user_id, Payment.status == "completed")
+    )
+    for pay in payments.scalars().all():
+        # Skip if ledger already has this ref
+        existing = await db.execute(
+            select(CreditLedger).where(
+                CreditLedger.ref_id == pay.id,
+                CreditLedger.user_id == user_id,
+                CreditLedger.kind == "purchase",
+            )
+        )
+        if existing.scalar_one_or_none():
+            continue
+        credits = int((pay.raw or {}).get("package_credits") or pay.amount_cents or 0)
+        if credits <= 0:
+            continue
+        entry = CreditLedger(
+            user_id=user_id,
+            kind="purchase",
+            amount_cents=credits,
+            ref_id=pay.id,
+            created_at=datetime.utcnow(),
+        )
+        db.add(entry)
+    await db.commit()
 
 
 def _now_ts() -> float:
@@ -729,6 +763,7 @@ async def start_generation(req: GenerateRequest, background_tasks: BackgroundTas
     job_id = str(uuid.uuid4())
 
     async with SessionLocal() as db:
+        await reconcile_user_credits(db, user["id"])
         r = await db.execute(
             select(func.coalesce(func.sum(CreditLedger.amount_cents), 0))
             .where(CreditLedger.user_id == user["id"])

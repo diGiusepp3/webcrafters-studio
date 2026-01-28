@@ -143,6 +143,32 @@ CREDIT_PACKAGES = [
 async def get_credit_balance(user=Depends(get_current_user)):
     """Get current credit balance for the authenticated user."""
     async with SessionLocal() as db:
+        # Backfill missing purchase ledger entries from completed payments
+        payments = await db.execute(
+            select(Payment).where(Payment.user_id == user["id"], Payment.status == "completed")
+        )
+        for pay in payments.scalars().all():
+            existing = await db.execute(
+                select(CreditLedger).where(
+                    CreditLedger.ref_id == pay.id,
+                    CreditLedger.user_id == user["id"],
+                    CreditLedger.kind == "purchase",
+                )
+            )
+            if existing.scalar_one_or_none():
+                continue
+            credits = int((pay.raw or {}).get("package_credits") or pay.amount_cents or 0)
+            if credits <= 0:
+                continue
+            db.add(CreditLedger(
+                user_id=user["id"],
+                kind="purchase",
+                amount_cents=credits,
+                ref_id=pay.id,
+                created_at=datetime.utcnow(),
+            ))
+        await db.commit()
+
         result = await db.execute(
             select(func.coalesce(func.sum(CreditLedger.amount_cents), 0))
             .where(CreditLedger.user_id == user["id"])
